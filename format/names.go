@@ -55,7 +55,7 @@ func qualifiedName(nodes []*pg.Node, quote func(string) string) string {
 	return strings.Join(parts, ".")
 }
 
-func nameList(nodes []*pg.Node) string {
+func nameItems(nodes []*pg.Node) []string {
 	parts := make([]string, len(nodes))
 	for index, node := range nodes {
 		if node.GetString_() == nil {
@@ -63,7 +63,12 @@ func nameList(nodes []*pg.Node) string {
 		}
 		parts[index] = ident(node.GetString_().Sval)
 	}
-	return strings.Join(parts, ", ")
+	return parts
+}
+
+// nameList prints names as a parenthesized list that follows the lists rule
+func nameList(nodes []*pg.Node) string {
+	return list("(", nameItems(nodes), ")")
 }
 
 // canonicalTypes maps internal type names to the spelling we print

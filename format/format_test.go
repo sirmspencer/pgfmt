@@ -369,3 +369,18 @@ func TestSelectList(t *testing.T) {
 		})
 	}
 }
+
+func TestOtherListsFollowTheListsRule(t *testing.T) {
+	tests := []struct{ name, input, want string }{
+		{"index columns", "create index i on t (a, b, c, d)", "create index i on t (\n  a\n  , b\n  , c\n  , d\n)\n"},
+		{"short index columns", "create index i on t (a, b, c)", "create index i on t (a, b, c)\n"},
+		{"join using", "select 1 from a inner join b using (w, x, y, z)", "select 1\nfrom a\ninner join b\n  using (\n    w\n    , x\n    , y\n    , z\n  )\n"},
+		{"conflict target", "insert into t (a) values (1) on conflict (a, b, c, d) do nothing", "insert into t (a)\nvalues (1)\non conflict (\n  a\n  , b\n  , c\n  , d\n) do nothing\n"},
+		{"drop", "drop table a, b, c, d", "drop table\n  a\n  , b\n  , c\n  , d\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertOutput(t, formatOrFail(t, test.input).Output, test.want)
+		})
+	}
+}

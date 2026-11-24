@@ -628,7 +628,7 @@ from users as u;
 
 ### lists
 
-**A parenthesized list with three or fewer items stays on one line. A list with four or more items keeps the opening parenthesis on its line, places each item on its own indented line with leading commas, and puts the closing parenthesis on its own line.** This covers function arguments, `in (...)` value lists, `coalesce`, `greatest`, `least`, `array[...]`, row values, `insert` column lists, and `values` rows. Aggregate calls with `distinct` or `order by` inside the parentheses stay on one line, as do window specifications in `over (...)` and type modifiers such as `numeric(10, 2)`. Test case: `25-long-lists`.
+**A parenthesized list with three or fewer items stays on one line. A list with four or more items keeps the opening parenthesis on its line, places each item on its own indented line with leading commas, and puts the closing parenthesis on its own line.** This covers function arguments and parameters, `in (...)` value lists, `coalesce`, `greatest`, `least`, `array[...]`, row values, `insert` column lists, `values` rows, index columns and `include` lists, constraint key lists, join `using` lists, `on conflict` targets, alias and CTE column names, `distinct on`, and the names in a `drop` statement. Aggregate calls with `distinct` or `order by` inside the parentheses stay on one line, as do window specifications in `over (...)` and type modifiers such as `numeric(10, 2)`. Test case: `25-long-lists`.
 
 **IntelliJ default:** Different: lists of three or fewer items behave the same. Longer lists stay on one line and are split only when they pass the right margin. A space is added after `array`, as in `array [u.a, u.b]`.
 
@@ -736,6 +736,43 @@ select jsonb_build_object(
   ]
 )
 from users as u;
+```
+
+Index columns and constraint keys:
+
+```sql
+create index events_lookup_idx on events (account_id, kind, status, created_at);
+```
+
+↓
+
+```sql
+create index events_lookup_idx on events (
+  account_id
+  , kind
+  , status
+  , created_at
+);
+```
+
+```sql
+alter table events add constraint events_account_fk foreign key (account_id, region, shard, kind) references accounts (id, region, shard, kind);
+```
+
+↓
+
+```sql
+alter table events add constraint events_account_fk foreign key (
+  account_id
+  , region
+  , shard
+  , kind
+) references accounts (
+  id
+  , region
+  , shard
+  , kind
+);
 ```
 
 `coalesce` with three and four arguments:

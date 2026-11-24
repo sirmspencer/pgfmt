@@ -87,7 +87,7 @@ func (p *printer) constraint(con *pg.Constraint) string {
 		if len(con.Keys) == 0 {
 			return ""
 		}
-		return " (" + nameList(con.Keys) + ")"
+		return " " + nameList(con.Keys)
 	}
 	switch con.Contype {
 	case pg.ConstrType_CONSTR_NULL:
@@ -111,11 +111,11 @@ func (p *printer) constraint(con *pg.Constraint) string {
 		text += keys()
 	case pg.ConstrType_CONSTR_FOREIGN:
 		if len(con.FkAttrs) > 0 {
-			text += "foreign key (" + nameList(con.FkAttrs) + ") "
+			text += "foreign key " + nameList(con.FkAttrs) + " "
 		}
 		text += "references " + p.rangeVar(con.Pktable)
 		if len(con.PkAttrs) > 0 {
-			text += " (" + nameList(con.PkAttrs) + ")"
+			text += " " + nameList(con.PkAttrs)
 		}
 		switch con.FkMatchtype {
 		case "f":
@@ -235,7 +235,7 @@ func (p *printer) alterTableCmd(cmd *pg.AlterTableCmd) string {
 	return ""
 }
 
-func (p *printer) indexElems(nodes []*pg.Node) string {
+func (p *printer) indexElems(nodes []*pg.Node) []string {
 	parts := make([]string, len(nodes))
 	for index, node := range nodes {
 		elem := node.GetIndexElem()
@@ -271,7 +271,7 @@ func (p *printer) indexElems(nodes []*pg.Node) string {
 		}
 		parts[index] = text
 	}
-	return strings.Join(parts, ", ")
+	return parts
 }
 
 func (p *printer) indexStmt(stmt *pg.IndexStmt) string {
@@ -297,9 +297,9 @@ func (p *printer) indexStmt(stmt *pg.IndexStmt) string {
 	if stmt.AccessMethod != "btree" {
 		target += " using " + ident(stmt.AccessMethod)
 	}
-	target += " (" + p.indexElems(stmt.IndexParams) + ")"
+	target += " " + list("(", p.indexElems(stmt.IndexParams), ")")
 	if len(stmt.IndexIncludingParams) > 0 {
-		target += " include (" + p.indexElems(stmt.IndexIncludingParams) + ")"
+		target += " include " + list("(", p.indexElems(stmt.IndexIncludingParams), ")")
 	}
 	if stmt.NullsNotDistinct {
 		target += " nulls not distinct"
@@ -481,7 +481,7 @@ func (p *printer) viewStmt(stmt *pg.ViewStmt) string {
 	}
 	head += persistence(stmt.View) + "view " + p.rangeVar(stmt.View)
 	if len(stmt.Aliases) > 0 {
-		head += " (" + nameList(stmt.Aliases) + ")"
+		head += " " + nameList(stmt.Aliases)
 	}
 	return mark(stmt.View.Location) + head + " as\n" + p.statement(stmt.Query)
 }
@@ -522,6 +522,9 @@ func (p *printer) dropStmt(stmt *pg.DropStmt) string {
 		default:
 			fail("drop object %T", node.Node)
 		}
+	}
+	if len(names) > maxInlineItems {
+		return text + "\n" + indent(joinLeading(names)) + behavior(stmt.Behavior)
 	}
 	return text + " " + strings.Join(names, ", ") + behavior(stmt.Behavior)
 }

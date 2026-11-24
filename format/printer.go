@@ -308,7 +308,7 @@ func (p *printer) selectList(stmt *pg.SelectStmt) string {
 		if len(stmt.DistinctClause) == 1 && stmt.DistinctClause[0].Node == nil {
 			keyword += " distinct"
 		} else {
-			keyword += " distinct on (" + p.exprList(stmt.DistinctClause) + ")"
+			keyword += " distinct on " + list("(", p.exprs(stmt.DistinctClause), ")")
 		}
 	}
 	if len(stmt.TargetList) == 0 {
@@ -392,7 +392,7 @@ func (p *printer) with(with *pg.WithClause) string {
 		}
 		text := mark(cte.Location) + ident(cte.Ctename)
 		if len(cte.Aliascolnames) > 0 {
-			text += " (" + nameList(cte.Aliascolnames) + ")"
+			text += " " + nameList(cte.Aliascolnames)
 		}
 		text += " as "
 		switch cte.Ctematerialized {
@@ -501,7 +501,7 @@ func (p *printer) join(join *pg.JoinExpr) string {
 	}
 	text := p.fromItem(join.Larg) + "\n" + markNode(join.Rarg) + word + " " + p.fromItem(join.Rarg)
 	if len(join.UsingClause) > 0 {
-		text += "\n" + indent("using ("+nameList(join.UsingClause)+")")
+		text += "\n" + indent("using "+nameList(join.UsingClause))
 	}
 	if join.Quals != nil {
 		text += "\n" + indent(p.onClause(join.Quals))
@@ -537,7 +537,7 @@ func (p *printer) alias(alias *pg.Alias) string {
 	}
 	text := " as " + ident(alias.Aliasname)
 	if len(alias.Colnames) > 0 {
-		text += " (" + nameList(alias.Colnames) + ")"
+		text += " " + nameList(alias.Colnames)
 	}
 	return text
 }
@@ -592,7 +592,7 @@ func (p *printer) insertStmt(stmt *pg.InsertStmt) string {
 			if infer.Conname != "" {
 				text += " on constraint " + ident(infer.Conname)
 			} else {
-				text += " (" + p.indexElems(infer.IndexElems) + ")"
+				text += " " + list("(", p.indexElems(infer.IndexElems), ")")
 				if infer.WhereClause != nil {
 					text += " where " + p.expr(infer.WhereClause)
 				}
