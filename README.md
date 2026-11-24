@@ -50,13 +50,31 @@ Run `pgfmt -version` to confirm which build is on the path.
 ## Usage
 
 ```sh
-pgfmt < query.sql          # format stdin to stdout
-pgfmt query.sql            # print the formatted file
-pgfmt -w migrations/*.sql  # rewrite files in place
-pgfmt -check $(git ls-files '*.sql')  # list unformatted files, exit 1 if any
+pgfmt < query.sql                     # format stdin to stdout
+pgfmt query.sql                       # print the formatted file
+pgfmt -check $(git ls-files '*.sql')  # report problems, change nothing
+pgfmt -fix migrations/*.sql           # format and repair files in place
 ```
 
-Exit status is 0 on success, 1 when `-check` finds unformatted files, and 2 on a syntax error. On a syntax error nothing is written to stdout, so an editor keeps the buffer as it was.
+`-check` reports every problem it finds, one per line, without changing any file:
+
+```
+queries.sql: not formatted
+queries.sql:3:14: stray comma (fixable)
+queries.sql:7:17: syntax error at or near "name"
+```
+
+`-fix` formats each file, removes stray commas, and rewrites the file. A file with a syntax error that cannot be fixed is left unchanged, and the error is reported. Reading from stdin, as editors do, formats and repairs the same way; on an error that cannot be fixed nothing is written to stdout, so the editor keeps the buffer as it was.
+
+A stray comma is one that can only be extra: a trailing comma before a closing parenthesis, a semicolon, the end of a statement, or a keyword such as `from`; a doubled comma; or a comma directly after an opening parenthesis or a keyword. A missing comma cannot be repaired and is reported as a syntax error.
+
+| Exit status | `-check` | `-fix` and stdin |
+|---|---|---|
+| 0 | Nothing to change | Success |
+| 1 | Files need formatting or have fixable problems | Not used |
+| 2 | A syntax error that cannot be fixed, or a file could not be read | A syntax error that cannot be fixed, or a file could not be read or written |
+
+Statements that use syntax pgfmt does not lay out are reported on stderr in every mode. They do not affect the exit status.
 
 ## Editor setup
 
@@ -104,7 +122,7 @@ Add a File Watcher under Settings, Tools, File Watchers, with these values:
 
 - File type: SQL
 - Program: `pgfmt`
-- Arguments: `-w $FilePath$`
+- Arguments: `-fix $FilePath$`
 - Output paths to refresh: `$FilePath$`
 
 Disable the built-in SQL code style reformatting on save, so that the two formatters do not conflict.

@@ -30,6 +30,14 @@ type Skipped struct {
 type Result struct {
 	Output  string
 	Skipped []Skipped
+	Fixed   []Fixed
+}
+
+// Fixed describes a syntax error pgfmt repaired, such as a stray comma
+type Fixed struct {
+	Line    int
+	Column  int
+	Message string
 }
 
 // SyntaxError reports sql that postgres cannot parse
@@ -37,6 +45,8 @@ type SyntaxError struct {
 	Line    int
 	Column  int
 	Message string
+	// Offset is the byte offset of the error, or -1 when postgres gave no position
+	Offset int
 }
 
 // learn: any type with an Error() string method satisfies the built-in error interface. interfaces
@@ -74,7 +84,7 @@ type statementSpan struct {
 func FormatResult(src string) (*Result, error) {
 	result, err := formatSQL(src)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	result.Output = strings.ReplaceAll(result.Output, literalNewline, "\n")
 	return result, nil
@@ -83,6 +93,25 @@ func FormatResult(src string) (*Result, error) {
 // formatSQL is FormatResult, except that newlines inside literals are still
 // marked, so a caller nesting the output (a function body) can indent it safely
 func formatSQL(src string) (*Result, error) {
+	var fixes []Fixed
+	for {
+		result, err := formatOnce(src)
+		if err == nil {
+			result.Fixed = fixes
+			return result, nil
+		}
+		fixed, fix, ok := removeStrayComma(src, err)
+		if !ok {
+			// the fixes found so far are still reported next to the error
+			return &Result{Fixed: fixes}, err
+		}
+		fixes = append(fixes, fix)
+		src = fixed
+	}
+}
+
+// formatOnce formats src without repairing syntax errors
+func formatOnce(src string) (*Result, error) {
 	params := newPlaceholders()
 	text, err := params.substitute(src)
 	if err != nil {
@@ -126,10 +155,28 @@ func formatSQL(src string) (*Result, error) {
 func syntaxError(src string, err error) error {
 	var pgErr *parser.Error
 	if errors.As(err, &pgErr) {
-		line, col := lineCol(src, pgErr.Cursorpos-1)
-		return &SyntaxError{Line: line, Column: col, Message: pgErr.Message}
+		offset := -1
+		if pgErr.Cursorpos > 0 {
+			offset = byteOffset(src, pgErr.Cursorpos-1)
+		}
+		line, col := lineCol(src, max(offset, 0))
+		return &SyntaxError{Line: line, Column: col, Message: pgErr.Message, Offset: offset}
 	}
 	return err
+}
+
+// byteOffset converts postgres's character position to a byte offset
+// learn: ranging over a string yields (byte index, rune) pairs, stepping over multi-byte characters,
+// learn: so counting iterations counts characters while index tracks bytes.
+func byteOffset(text string, chars int) int {
+	count := 0
+	for index := range text {
+		if count == chars {
+			return index
+		}
+		count++
+	}
+	return len(text)
 }
 
 // splitStatements assigns every comment to a statement or to the file footer

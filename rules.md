@@ -8,7 +8,7 @@ This document lists the formatting rules pgfmt applies. Each rule shows input an
 
 Each rule below was compared with the default SQL code style of the JetBrains SQL formatter, which IntelliJ IDEA Ultimate and DataGrip share. The comparison used DataGrip 2025.1 with an empty code style, run through its command-line formatter on the examples in this document.
 
-3 same · 25 different · 11 not handled by IntelliJ
+3 same · 25 different · 12 not handled by IntelliJ
 
 | Rule | IntelliJ default |
 |---|---|
@@ -46,6 +46,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 | [type-names](#type-names) | Not handled |
 | [parentheses](#parentheses) | Not handled |
 | [quoting](#quoting) | Not handled |
+| [stray-commas](#stray-commas) | Not handled |
 | [comments](#comments) | Same |
 | [placeholders](#placeholders) | Different |
 | [literals](#literals) | Same |
@@ -96,6 +97,10 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 - [type-names](#type-names)
 - [parentheses](#parentheses)
 - [quoting](#quoting)
+
+**Repairs**
+
+- [stray-commas](#stray-commas)
 
 **Preservation**
 
@@ -1446,6 +1451,89 @@ select
   "user".id
   , 1 as order
 from "user";
+```
+
+---
+
+## Repairs
+
+### stray-commas
+
+**A comma that can only be extra is removed.** That is a trailing comma before a closing parenthesis or bracket, a semicolon, the end of the statement, or a reserved keyword such as `from`, `where`, or `order`; a doubled comma; or a comma directly after an opening parenthesis or a keyword. `pgfmt -check` reports each one as fixable, and `pgfmt -fix` removes it. A missing comma cannot be repaired, because the statement either fails to parse or means something else, so it is reported as a syntax error.
+
+**IntelliJ default:** Not handled: stray commas are left in place, as in `select a, b,` and `select a, , b`.
+
+A trailing comma before `from`:
+
+```sql
+select a, b, from t;
+```
+
+↓
+
+```sql
+select
+  a
+  , b
+from t;
+```
+
+A trailing comma in a list written with leading commas:
+
+```sql
+select
+  a
+  , b
+  ,
+from t;
+```
+
+↓
+
+```sql
+select
+  a
+  , b
+from t;
+```
+
+Trailing commas inside parentheses:
+
+```sql
+insert into t (a, b,) values (1, 2,);
+```
+
+↓
+
+```sql
+insert into t (a, b)
+values (1, 2);
+```
+
+A doubled comma and a leading comma:
+
+```sql
+select a,, b from t;
+```
+
+↓
+
+```sql
+select
+  a
+  , b
+from t;
+```
+
+```sql
+select , a from t;
+```
+
+↓
+
+```sql
+select a
+from t;
 ```
 
 ---

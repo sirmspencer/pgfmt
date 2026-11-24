@@ -39,14 +39,15 @@ func currentVersion() string {
 }
 
 // learn: flag.Bool returns a *bool that is filled in when flag.Parse() runs, so the values are read
-// learn: later with *write and *check. os.Exit ends the process at once without running deferred
+// learn: later with *fix and *check. os.Exit ends the process at once without running deferred
 // learn: calls, which is why the real work lives in run() and main only passes back its exit code.
 func main() {
-	write := flag.Bool("w", false, "write the result back to each file instead of stdout")
-	check := flag.Bool("check", false, "list files that are not formatted and exit 1 if any")
+	fix := flag.Bool("fix", false, "format each file and remove stray commas, rewriting it in place")
+	check := flag.Bool("check", false, "report unformatted files, fixable problems, and syntax errors without changing anything")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: pgfmt [-w | -check | -version] [file ...]")
+		fmt.Fprintln(os.Stderr, "usage: pgfmt [-check | -fix | -version] [file ...]")
+		fmt.Fprintln(os.Stderr, "with no files, pgfmt formats stdin to stdout")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -54,82 +55,112 @@ func main() {
 		fmt.Println("pgfmt " + currentVersion())
 		return
 	}
-	os.Exit(run(flag.Args(), *write, *check))
+	if *fix && *check {
+		fmt.Fprintln(os.Stderr, "pgfmt: -check and -fix cannot be used together")
+		os.Exit(2)
+	}
+	os.Exit(run(flag.Args(), *fix, *check))
 }
 
-// learn: `write, check bool` declares two parameters of the same type. io.ReadAll(os.Stdin) reads
+// exit statuses
+const (
+	statusClean   = 0 // nothing to change
+	statusChanges = 1 // -check found formatting or fixable problems
+	statusErrors  = 2 // a syntax error that cannot be fixed, or a file error
+)
+
+// learn: `fix, check bool` declares two parameters of the same type. io.ReadAll(os.Stdin) reads
 // learn: until end of input. bytes.Equal compares byte slices; == does not work on slices in go.
-func run(files []string, write, check bool) int {
+func run(files []string, fix, check bool) int {
 	if len(files) == 0 {
 		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "pgfmt:", err)
-			return 2
-		}
-		output, err := formatText("<stdin>", input)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 2
+			return statusErrors
 		}
 		if check {
-			if !bytes.Equal(input, output) {
-				fmt.Println("<stdin>")
-				return 1
-			}
-			return 0
+			return checkFile("<stdin>", input)
 		}
-		os.Stdout.Write(output)
-		return 0
+		// editors pipe the buffer through here: on an error nothing reaches stdout
+		result, err := format.FormatResult(string(input))
+		report(os.Stderr, "<stdin>", result, err, err == nil)
+		if err != nil {
+			return statusErrors
+		}
+		os.Stdout.Write([]byte(result.Output))
+		return statusClean
 	}
 
-	status := 0
+	status := statusClean
 	for _, path := range files {
 		input, err := os.ReadFile(path)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "pgfmt:", err)
-			status = 2
+			status = statusErrors
 			continue
 		}
-		output, err := formatText(path, input)
+		if check {
+			status = max(status, checkFile(path, input))
+			continue
+		}
+		result, err := format.FormatResult(string(input))
+		// without -fix the file is not changed, so fixes are only possible
+		report(os.Stderr, path, result, err, fix && err == nil)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			status = 2
+			status = statusErrors
 			continue
 		}
-		switch {
-		case check:
-			if !bytes.Equal(input, output) {
-				fmt.Println(path)
-				status = max(status, 1)
-			}
-		case write:
-			if !bytes.Equal(input, output) {
-				if err := os.WriteFile(path, output, 0o644); err != nil {
-					fmt.Fprintln(os.Stderr, "pgfmt:", err)
-					status = 2
-				}
-			}
-		default:
+		output := []byte(result.Output)
+		if !fix {
 			os.Stdout.Write(output)
+			continue
+		}
+		if !bytes.Equal(input, output) {
+			if err := os.WriteFile(path, output, 0o644); err != nil {
+				fmt.Fprintln(os.Stderr, "pgfmt:", err)
+				status = statusErrors
+			}
 		}
 	}
 	return status
 }
 
-// formatText formats one input, reporting skipped statements on stderr
-// learn: string(input) and []byte(text) convert between strings and byte slices by copying.
-// learn: fmt.Errorf with %w wraps an error so errors.As and errors.Is can still find the original.
-func formatText(name string, input []byte) ([]byte, error) {
+// checkFile reports everything -fix would change or could not fix, on stdout
+func checkFile(name string, input []byte) int {
 	result, err := format.FormatResult(string(input))
+	report(os.Stdout, name, result, err, false)
+	if err != nil {
+		return statusErrors
+	}
+	if result.Output != string(input) {
+		fmt.Printf("%s: not formatted\n", name)
+		return statusChanges
+	}
+	return statusClean
+}
+
+// report prints fixes, a syntax error, and statements left unformatted, one per line
+// learn: io.Writer is an interface with one method, Write. os.Stdout and os.Stderr both satisfy it,
+// learn: so the caller picks where the report goes.
+func report(out io.Writer, name string, result *format.Result, err error, applied bool) {
+	state := "fixable"
+	if applied {
+		state = "fixed"
+	}
+	if result != nil {
+		for _, fixed := range result.Fixed {
+			fmt.Fprintf(out, "%s:%d:%d: %s (%s)\n", name, fixed.Line, fixed.Column, fixed.Message, state)
+		}
+		for _, skipped := range result.Skipped {
+			fmt.Fprintf(os.Stderr, "%s:%d: left unformatted: %s\n", name, skipped.Line, skipped.Reason)
+		}
+	}
 	if err != nil {
 		var syntax *format.SyntaxError
 		if errors.As(err, &syntax) {
-			return nil, fmt.Errorf("%s:%d:%d: %s", name, syntax.Line, syntax.Column, syntax.Message)
+			fmt.Fprintf(out, "%s:%d:%d: %s\n", name, syntax.Line, syntax.Column, syntax.Message)
+		} else {
+			fmt.Fprintf(out, "%s: %v\n", name, err)
 		}
-		return nil, fmt.Errorf("%s: %w", name, err)
 	}
-	for _, skipped := range result.Skipped {
-		fmt.Fprintf(os.Stderr, "%s:%d: left unformatted: %s\n", name, skipped.Line, skipped.Reason)
-	}
-	return []byte(result.Output), nil
 }

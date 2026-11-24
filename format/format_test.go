@@ -265,3 +265,58 @@ func TestUnsupportedStatementCleanup(t *testing.T) {
 	}
 	assertOutput(t, result.Output, want)
 }
+
+func TestStrayCommas(t *testing.T) {
+	tests := []struct {
+		name, input, want string
+		fixes             int
+	}{
+		{"trailing in select", "select a, b, from t", "select\n  a\n  , b\nfrom t\n", 1},
+		{"trailing with leading commas", "select\n  a\n  , b\n  ,\nfrom t", "select\n  a\n  , b\nfrom t\n", 1},
+		{"trailing in in list", "select a from t where id in (1, 2,)", "select a\nfrom t\nwhere id in (1, 2)\n", 1},
+		{"trailing in insert", "insert into t (a, b,) values (1, 2,)", "insert into t (a, b)\nvalues (1, 2)\n", 2},
+		{"trailing in function call", "select f(a, b,) from t", "select f(a, b)\nfrom t\n", 1},
+		{"trailing in create table", "create table t (a int,)", "create table t (\n  a integer\n)\n", 1},
+		{"trailing before order by", "select a from t group by a, order by a", "select a\nfrom t\ngroup by a\norder by a\n", 1},
+		{"trailing before semicolon", "select a, b,;", "select\n  a\n  , b;\n", 1},
+		{"doubled", "select a,, b from t", "select\n  a\n  , b\nfrom t\n", 1},
+		{"leading", "select , a from t", "select a\nfrom t\n", 1},
+		{"comma in a string is untouched", "select 'a,', b, from t", "select\n  'a,'\n  , b\nfrom t\n", 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := formatOrFail(t, test.input)
+			assertOutput(t, result.Output, test.want)
+			if len(result.Fixed) != test.fixes {
+				t.Errorf("fixed %d commas, want %d: %+v", len(result.Fixed), test.fixes, result.Fixed)
+			}
+		})
+	}
+}
+
+// a missing comma is a real error, and fixes found before it are still reported
+func TestUnfixableErrorKeepsFixes(t *testing.T) {
+	result, err := FormatResult("select a, from t;\nselect id email name from users;")
+	var syntax *SyntaxError
+	if !errors.As(err, &syntax) {
+		t.Fatalf("error = %v, want a syntax error", err)
+	}
+	if syntax.Line != 2 || syntax.Column != 17 {
+		t.Errorf("error at %d:%d, want 2:17", syntax.Line, syntax.Column)
+	}
+	if result == nil || len(result.Fixed) != 1 || result.Fixed[0].Line != 1 || result.Fixed[0].Column != 9 {
+		t.Errorf("fixes = %+v, want one at 1:9", result)
+	}
+}
+
+// columns count characters, not bytes
+func TestSyntaxErrorColumnCountsCharacters(t *testing.T) {
+	_, err := Format("select 'héllo' frm t")
+	var syntax *SyntaxError
+	if !errors.As(err, &syntax) {
+		t.Fatalf("error = %v, want a syntax error", err)
+	}
+	if syntax.Column != 20 {
+		t.Errorf("column = %d, want 20", syntax.Column)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	pg "github.com/pganalyze/pg_query_go/v6"
 )
@@ -209,6 +210,6 @@ func lineCol(text string, pos int) (int, int) {
 	}
 	before := text[:pos]
 	line := strings.Count(before, "\n") + 1
-	col := pos - strings.LastIndex(before, "\n")
+	col := utf8.RuneCountInString(before[strings.LastIndex(before, "\n")+1:]) + 1
 	return line, col
 }
