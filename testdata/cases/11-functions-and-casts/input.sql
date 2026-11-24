@@ -1,0 +1,1 @@
+SELECT COALESCE(nickname, first_name) AS display_name, CAST(created_at AS DATE) AS created_on, amount::NUMERIC(10,2), NOW() - INTERVAL '1 day' AS yesterday, row_number() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn, count(DISTINCT user_id) FROM orders;

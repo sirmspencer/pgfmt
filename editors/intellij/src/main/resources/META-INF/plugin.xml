@@ -1,0 +1,27 @@
+<idea-plugin>
+    <id>io.github.sirmspencer.pgfmt</id>
+    <name>pgfmt</name>
+    <vendor url="https://github.com/sirmspencer/pgfmt">sirmspencer</vendor>
+
+    <description><![CDATA[
+    <p>Formats PostgreSQL <code>.sql</code> files with <a href="https://github.com/sirmspencer/pgfmt">pgfmt</a>,
+    so that every editor on a team produces the same output.</p>
+    <p>Reformat Code, reformat on save, and reformat on commit run pgfmt in place of the built-in SQL
+    formatter. pgfmt preserves comments and <code>:name</code> placeholders, and leaves any statement it
+    cannot format exactly as written.</p>
+    <p>The plugin requires the pgfmt executable, available through Homebrew:
+    <code>brew tap sirmspencer/tap &amp;&amp; brew install pgfmt</code>. Its location can be set under
+    Settings | Tools | pgfmt.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <formattingService implementation="io.github.sirmspencer.pgfmt.PgfmtFormattingService"/>
+        <applicationConfigurable parentId="tools"
+                                 instance="io.github.sirmspencer.pgfmt.PgfmtConfigurable"
+                                 id="io.github.sirmspencer.pgfmt"
+                                 displayName="pgfmt"/>
+        <notificationGroup id="pgfmt" displayType="BALLOON"/>
+    </extensions>
+</idea-plugin>

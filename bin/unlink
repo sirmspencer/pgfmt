@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# remove the dev pgfmt symlink and restore the homebrew version if installed
+# usage: ./bin/unlink [dest-dir]
+set -euo pipefail
+
+if [ -n "${1:-}" ]; then
+  dest_dir="$1"
+elif command -v brew >/dev/null 2>&1; then
+  dest_dir="$(brew --prefix)/bin"
+else
+  dest_dir="/usr/local/bin"
+fi
+
+dest="$dest_dir/pgfmt"
+if [ -L "$dest" ] && [[ "$(readlink "$dest")" == */local/bin/pgfmt ]]; then
+  rm "$dest"
+  echo "removed: $dest"
+fi
+
+if command -v brew >/dev/null 2>&1 && brew list --formula pgfmt >/dev/null 2>&1; then
+  brew link --overwrite pgfmt >/dev/null
+  echo "restored homebrew pgfmt"
+fi
