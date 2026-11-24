@@ -18,7 +18,7 @@ The style is defined by the input and expected pairs in `testdata/cases` and doc
 
 - Keywords, functions, types, and unquoted identifiers are lowercase. Quoted identifiers are not changed.
 - Indentation is two spaces.
-- A clause with one item stays on one line (`select id`, `where id = :id`). A clause with several items places each item on its own indented line, with a leading comma on each line after the first.
+- `select`, `group by`, `order by`, and `returning` stay on one line up to three items. Other clauses stay on one line with one item (`where id = :id`). Longer lists place each item on its own indented line, with a leading comma on each line after the first.
 - Parenthesized lists, including function arguments, stay on one line up to three items and are split one item per line from four items.
 - Joins align with `from`. The `on` condition is indented beneath the join, and additional `and` conditions align with `on`.
 - Subqueries and grouped `and`/`or` conditions open a parenthesis at the end of the line and close it on a separate line.

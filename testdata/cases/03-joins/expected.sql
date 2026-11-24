@@ -4,12 +4,12 @@ select
   , p.name
   , a.label
 from users as u
-join orders as o
+inner join orders as o
   on o.user_id = u.id
 left join payments as p
   on p.order_id = o.id
   and p.status = 'settled'
-join accounts as a
+inner join accounts as a
   using (account_id)
 cross join regions as r
 where r.code = :region;

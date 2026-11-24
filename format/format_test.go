@@ -118,8 +118,8 @@ func TestPlaceholders(t *testing.T) {
 		{"inside a string", "select ':not_a_param'", "select ':not_a_param'\n"},
 		{"inside a comment", "-- uses :id\nselect :id", "-- uses :id\nselect :id\n"},
 		{"array slice", "select tags[1:2] from t", "select tags[1:2]\nfrom t\n"},
-		{"repeated name", "select :a, :a", "select\n  :a\n  , :a\n"},
-		{"mixed with numbered params", "select $1, :name", "select\n  $1\n  , :name\n"},
+		{"repeated name", "select :a, :a", "select :a, :a\n"},
+		{"mixed with numbered params", "select $1, :name", "select $1, :name\n"},
 		{"keyword as name", "select * from t limit :limit offset :offset", "select *\nfrom t\nlimit :limit\noffset :offset\n"},
 	}
 	for _, test := range tests {
@@ -191,8 +191,8 @@ func TestPrecedenceIsKept(t *testing.T) {
 func TestQuotedNames(t *testing.T) {
 	tests := []struct{ input, want string }{
 		{`select "user".id from "user"`, "select \"user\".id\nfrom \"user\"\n"},
-		{`select "left"("x"), "left".id from "left"`, "select\n  left(x)\n  , \"left\".id\nfrom \"left\"\n"},
-		{`select 1 as "order", 2 as "Two"`, "select\n  1 as order\n  , 2 as \"Two\"\n"},
+		{`select "left"("x"), "left".id from "left"`, "select left(x), \"left\".id\nfrom \"left\"\n"},
+		{`select 1 as "order", 2 as "Two"`, "select 1 as order, 2 as \"Two\"\n"},
 		{`select "Mixed" from t`, "select \"Mixed\"\nfrom t\n"},
 	}
 	for _, test := range tests {
@@ -214,8 +214,8 @@ func TestStringLiteralsAreUntouched(t *testing.T) {
 
 func TestRestrictedSyntax(t *testing.T) {
 	tests := []struct{ input, want string }{
-		{"select (comp).a, (t.comp).b from t", "select\n  (comp).a\n  , (t.comp).b\nfrom t\n"},
-		{`select "coalesce"(1), "extract"('a', b)`, "select\n  \"coalesce\"(1)\n  , \"extract\"('a', b)\n"},
+		{"select (comp).a, (t.comp).b from t", "select (comp).a, (t.comp).b\nfrom t\n"},
+		{`select "coalesce"(1), "extract"('a', b)`, "select \"coalesce\"(1), \"extract\"('a', b)\n"},
 		{"create table t (a timestamp default (now() at time zone 'utc'), b int default -1)",
 			"create table t (\n  a timestamp default (now() at time zone 'utc')\n  , b integer default -1\n)\n"},
 	}
@@ -271,17 +271,17 @@ func TestStrayCommas(t *testing.T) {
 		name, input, want string
 		fixes             int
 	}{
-		{"trailing in select", "select a, b, from t", "select\n  a\n  , b\nfrom t\n", 1},
-		{"trailing with leading commas", "select\n  a\n  , b\n  ,\nfrom t", "select\n  a\n  , b\nfrom t\n", 1},
+		{"trailing in select", "select a, b, from t", "select a, b\nfrom t\n", 1},
+		{"trailing with leading commas", "select\n  a\n  , b\n  ,\nfrom t", "select a, b\nfrom t\n", 1},
 		{"trailing in in list", "select a from t where id in (1, 2,)", "select a\nfrom t\nwhere id in (1, 2)\n", 1},
 		{"trailing in insert", "insert into t (a, b,) values (1, 2,)", "insert into t (a, b)\nvalues (1, 2)\n", 2},
 		{"trailing in function call", "select f(a, b,) from t", "select f(a, b)\nfrom t\n", 1},
 		{"trailing in create table", "create table t (a int,)", "create table t (\n  a integer\n)\n", 1},
 		{"trailing before order by", "select a from t group by a, order by a", "select a\nfrom t\ngroup by a\norder by a\n", 1},
-		{"trailing before semicolon", "select a, b,;", "select\n  a\n  , b;\n", 1},
-		{"doubled", "select a,, b from t", "select\n  a\n  , b\nfrom t\n", 1},
+		{"trailing before semicolon", "select a, b,;", "select a, b;\n", 1},
+		{"doubled", "select a,, b from t", "select a, b\nfrom t\n", 1},
 		{"leading", "select , a from t", "select a\nfrom t\n", 1},
-		{"comma in a string is untouched", "select 'a,', b, from t", "select\n  'a,'\n  , b\nfrom t\n", 1},
+		{"comma in a string is untouched", "select 'a,', b, from t", "select 'a,', b\nfrom t\n", 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -318,5 +318,54 @@ func TestSyntaxErrorColumnCountsCharacters(t *testing.T) {
 	}
 	if syntax.Column != 20 {
 		t.Errorf("column = %d, want 20", syntax.Column)
+	}
+}
+
+func TestPlaceholderReadings(t *testing.T) {
+	tests := []struct{ name, input, want string }{
+		{"value", "select * from t where id = :id", "select *\nfrom t\nwhere id = :id\n"},
+		{"fragment on its own line", "select * from t\nwhere a = 1\n:filters\norder by a", "select *\nfrom t\nwhere a = 1\n:filters\norder by a\n"},
+		{"fragment after a name", "select * from t where active :more", "select *\nfrom t\nwhere active :more\n"},
+		{"fragment at the end", "select * from t :where-clause", "select *\nfrom t :where-clause\n"},
+		{"name", "select * from :table-name", "select *\nfrom :table-name\n"},
+		{"typed literal on a built-in type stays a value", "select date :day", "select :day::date\n"},
+		{"clojure keyword characters", "select * from t where a = :ok? and b = :force!", "select *\nfrom t\nwhere\n  a = :ok?\n  and b = :force!\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := formatOrFail(t, test.input)
+			if len(result.Skipped) > 0 {
+				t.Errorf("skipped: %+v", result.Skipped)
+			}
+			assertOutput(t, result.Output, test.want)
+		})
+	}
+}
+
+// error messages name the placeholder, not its stand-in
+func TestPlaceholderErrorMessage(t *testing.T) {
+	_, err := Format("select * from t where a = 1 :ab")
+	var syntax *SyntaxError
+	if !errors.As(err, &syntax) {
+		t.Fatalf("error = %v, want a syntax error", err)
+	}
+	if syntax.Message != `syntax error at or near ":ab"` {
+		t.Errorf("message = %q", syntax.Message)
+	}
+}
+
+func TestSelectList(t *testing.T) {
+	tests := []struct{ name, input, want string }{
+		{"three items stay inline", "select id, name, email from users", "select id, name, email\nfrom users\n"},
+		{"four items break", "select id, name, email, phone from users", "select\n  id\n  , name\n  , email\n  , phone\nfrom users\n"},
+		{"a multi-line item breaks", "select id, case when a then 1 end as b from t", "select\n  id\n  , case\n    when a then 1\n  end as b\nfrom t\n"},
+		{"a comment between items breaks", "select id, -- key\n name from t", "select\n  id -- key\n  , name\nfrom t\n"},
+		{"a comment after the last item stays inline", "select id, name -- names\nfrom t", "select id, name -- names\nfrom t\n"},
+		{"distinct", "select distinct a, b from t", "select distinct a, b\nfrom t\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertOutput(t, formatOrFail(t, test.input).Output, test.want)
+		})
 	}
 }

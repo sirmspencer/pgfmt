@@ -88,11 +88,32 @@ func indent(text string) string {
 // clause prints a keyword with its items: inline for one item, one per line otherwise
 // learn: this one helper produces the house style: `select id` for one item, a keyword followed by
 // learn: indented lines for several, with the comma leading each line after the first.
-func clause(keyword string, items []string) string {
+func (p *printer) clause(keyword string, items []string) string {
 	if len(items) == 1 {
 		return keyword + " " + items[0]
 	}
-	return keyword + "\n" + indent(joinLeading(items))
+	return p.keywordMark(items[0]) + keyword + "\n" + indent(joinLeading(items))
+}
+
+// keywordMark tags a keyword printed alone on its line with the position of
+// the keyword in the source: the token just before the first item. comments
+// written above the clause then stay above it, not inside it.
+func (p *printer) keywordMark(first string) string {
+	match := markPattern.FindStringSubmatch(first)
+	if match == nil {
+		return ""
+	}
+	loc, _ := strconv.Atoi(match[1])
+	index, ok := p.src.tokenAt[int32(loc)]
+	if !ok {
+		return ""
+	}
+	for index--; index >= 0; index-- {
+		if !isComment(p.src.tokens[index]) {
+			return mark(p.src.tokens[index].Start)
+		}
+	}
+	return ""
 }
 
 // maxInlineItems is the longest parenthesized list that stays on one line
@@ -146,7 +167,7 @@ func (p *printer) conditionClause(keyword string, node *pg.Node) string {
 	if len(items) == 1 {
 		return keyword + " " + items[0]
 	}
-	return keyword + "\n" + indent(strings.Join(items, "\n"))
+	return p.keywordMark(items[0]) + keyword + "\n" + indent(strings.Join(items, "\n"))
 }
 
 // statement prints any supported statement node
@@ -223,7 +244,7 @@ func (p *printer) selectStmt(stmt *pg.SelectStmt) string {
 			parts = append(parts, into)
 		}
 		if len(stmt.FromClause) > 0 {
-			parts = append(parts, clause("from", p.fromItems(stmt.FromClause)))
+			parts = append(parts, p.clause("from", p.fromItems(stmt.FromClause)))
 		}
 		if stmt.WhereClause != nil {
 			parts = append(parts, p.conditionClause("where", stmt.WhereClause))
@@ -232,7 +253,7 @@ func (p *printer) selectStmt(stmt *pg.SelectStmt) string {
 			if stmt.GroupDistinct {
 				fail("group by distinct")
 			}
-			parts = append(parts, clause("group by", p.markedExprs(stmt.GroupClause)))
+			parts = append(parts, p.shortClause("group by", stmt.GroupClause, p.markedExprs(stmt.GroupClause)))
 		}
 		if stmt.HavingClause != nil {
 			parts = append(parts, p.conditionClause("having", stmt.HavingClause))
@@ -246,7 +267,7 @@ func (p *printer) selectStmt(stmt *pg.SelectStmt) string {
 		for index, node := range stmt.SortClause {
 			items[index] = markNode(node) + p.sortBy(node)
 		}
-		parts = append(parts, clause("order by", items))
+		parts = append(parts, p.shortClause("order by", stmt.SortClause, items))
 	}
 	if stmt.LimitOption == pg.LimitOption_LIMIT_OPTION_WITH_TIES {
 		fail("fetch with ties")
@@ -293,7 +314,37 @@ func (p *printer) selectList(stmt *pg.SelectStmt) string {
 	if len(stmt.TargetList) == 0 {
 		return keyword
 	}
-	return clause(keyword, p.targets(stmt.TargetList))
+	return p.shortClause(keyword, stmt.TargetList, p.targets(stmt.TargetList))
+}
+
+// shortClause prints select, group by, and order by: on the keyword's line
+// when inlineItems allows, otherwise one item per line
+func (p *printer) shortClause(keyword string, nodes []*pg.Node, items []string) string {
+	if p.inlineItems(nodes, items) {
+		return keyword + " " + strings.Join(items, ", ")
+	}
+	return p.clause(keyword, items)
+}
+
+// inlineItems reports whether a clause's items stay on the keyword's line: there
+// are at most maxInlineItems, none spans several lines, and no comment sits
+// between items, since on one line that comment would lose its place
+func (p *printer) inlineItems(nodes []*pg.Node, items []string) bool {
+	if len(items) < 2 || len(items) > maxInlineItems {
+		return len(items) < 2
+	}
+	for _, item := range items {
+		if strings.Contains(item, "\n") {
+			return false
+		}
+	}
+	first, last := minLocation(nodes[0]), minLocation(nodes[len(nodes)-1])
+	for _, token := range p.src.tokens {
+		if isComment(token) && token.Start > first && token.Start < last {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *printer) targets(nodes []*pg.Node) []string {
@@ -325,7 +376,7 @@ func (p *printer) values(lists []*pg.Node) string {
 	for index, node := range lists {
 		rows[index] = markNode(node) + list("(", p.exprs(node.GetList().Items), ")")
 	}
-	return clause("values", rows)
+	return p.clause("values", rows)
 }
 
 func (p *printer) with(with *pg.WithClause) string {
@@ -434,7 +485,7 @@ func (p *printer) join(join *pg.JoinExpr) string {
 		fail("parenthesized join")
 	}
 	word := map[pg.JoinType]string{
-		pg.JoinType_JOIN_INNER: "join",
+		pg.JoinType_JOIN_INNER: "inner join",
 		pg.JoinType_JOIN_LEFT:  "left join",
 		pg.JoinType_JOIN_RIGHT: "right join",
 		pg.JoinType_JOIN_FULL:  "full join",
@@ -492,7 +543,7 @@ func (p *printer) alias(alias *pg.Alias) string {
 }
 
 func (p *printer) returning(nodes []*pg.Node) string {
-	return clause("returning", p.targets(nodes))
+	return p.shortClause("returning", nodes, p.targets(nodes))
 }
 
 func (p *printer) setItems(nodes []*pg.Node) []string {
@@ -551,7 +602,7 @@ func (p *printer) insertStmt(stmt *pg.InsertStmt) string {
 		case pg.OnConflictAction_ONCONFLICT_NOTHING:
 			parts = append(parts, mark(conflict.Location)+text+" do nothing")
 		case pg.OnConflictAction_ONCONFLICT_UPDATE:
-			parts = append(parts, mark(conflict.Location)+text+" do update", clause("set", p.setItems(conflict.TargetList)))
+			parts = append(parts, mark(conflict.Location)+text+" do update", p.clause("set", p.setItems(conflict.TargetList)))
 			if conflict.WhereClause != nil {
 				parts = append(parts, p.conditionClause("where", conflict.WhereClause))
 			}
@@ -571,9 +622,9 @@ func (p *printer) updateStmt(stmt *pg.UpdateStmt) string {
 		parts = append(parts, p.with(stmt.WithClause))
 	}
 	parts = append(parts, mark(stmt.Relation.Location)+"update "+p.rangeVar(stmt.Relation))
-	parts = append(parts, clause("set", p.setItems(stmt.TargetList)))
+	parts = append(parts, p.clause("set", p.setItems(stmt.TargetList)))
 	if len(stmt.FromClause) > 0 {
-		parts = append(parts, clause("from", p.fromItems(stmt.FromClause)))
+		parts = append(parts, p.clause("from", p.fromItems(stmt.FromClause)))
 	}
 	if stmt.WhereClause != nil {
 		parts = append(parts, p.conditionClause("where", stmt.WhereClause))
@@ -591,7 +642,7 @@ func (p *printer) deleteStmt(stmt *pg.DeleteStmt) string {
 	}
 	parts = append(parts, mark(stmt.Relation.Location)+"delete from "+p.rangeVar(stmt.Relation))
 	if len(stmt.UsingClause) > 0 {
-		parts = append(parts, clause("using", p.fromItems(stmt.UsingClause)))
+		parts = append(parts, p.clause("using", p.fromItems(stmt.UsingClause)))
 	}
 	if stmt.WhereClause != nil {
 		parts = append(parts, p.conditionClause("where", stmt.WhereClause))

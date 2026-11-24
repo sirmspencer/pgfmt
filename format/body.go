@@ -205,7 +205,7 @@ func canonicalizeBody(fn *pg.CreateFunctionStmt) {
 // learn: proto.MarshalOptions{Deterministic: true} encodes a message to bytes the same way every
 // learn: time, so two equal trees always give equal strings.
 func canonicalSQL(code string) string {
-	text, err := newPlaceholders().substitute(code)
+	text, err := newPlaceholders(nil).substitute(code)
 	if err != nil {
 		return canonicalCode(code)
 	}

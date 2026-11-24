@@ -9,8 +9,6 @@ values
   , ('c');
 
 insert into archived_users (id, email)
-select
-  id
-  , email
+select id, email
 from users
 where deleted_at is not null;

@@ -14,69 +14,70 @@ import (
 	"unicode/utf8"
 
 	pg "github.com/pganalyze/pg_query_go/v6"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// placeholderName matches a :name placeholder body, including kebab-case names
-// learn: a package-level variable, initialized once when the program starts. MustCompile panics on
-// learn: a bad pattern instead of returning an error, which is fine for patterns written in the
-// learn: code. the backticks make a raw string: backslashes are not escape characters inside it.
-var placeholderName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(-[A-Za-z0-9_]+)*`)
+// placeholderName matches a :name placeholder body. names follow clojure
+// keywords as inquery uses them: kebab-case segments, and ? or ! allowed.
+var placeholderName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_?!]*(-[A-Za-z0-9_?!]+)*`)
 
-// placeholders maps :name placeholders to the $n parameters postgres can parse
-// learn: a struct groups named fields, like a record or a class without inheritance. names starting
-// learn: with a lowercase letter are unexported (private to this package); uppercase names are
-// learn: exported. map[string]int32 is a hash map from string keys to int32 values.
+// placeholderMode is how a placeholder is shown to the parser. inquery
+// replaces :name with raw text, so a placeholder can stand for a value, a sql
+// fragment such as `and status = 'open'`, or a table or column name.
+type placeholderMode int
+
+// learn: a defined type over int plus iota gives an enum; the zero value, asValue, is the default
+// learn: for any name missing from the modes map.
+const (
+	asValue    placeholderMode = iota // a parameter: $0001
+	asFragment                        // a comment the parser skips: /*__*/
+	asName                            // an identifier: _0001
+)
+
+// placeholders maps :name placeholders to stand-ins postgres can parse
 type placeholders struct {
-	numbers map[string]int32
-	names   map[int32]string
-	next    int32
+	numbers  map[string]int32
+	names    map[int32]string
+	modes    map[string]placeholderMode
+	restores map[string]string // stand-in text -> :name
+	next     int32
 }
 
-// learn: go has no constructors. by convention a newX function builds a ready-to-use value.
-// learn: &placeholders{...} creates the struct and returns a pointer to it, so every caller shares
-// learn: the same instance instead of a copy. maps must be created (here with map literals) before
-// learn: writing to them; writing to a nil map panics.
-func newPlaceholders() *placeholders {
-	return &placeholders{numbers: map[string]int32{}, names: map[int32]string{}, next: 1}
+// newPlaceholders starts with every placeholder treated as a value, except the
+// modes already learned from earlier parse attempts
+func newPlaceholders(modes map[string]placeholderMode) *placeholders {
+	if modes == nil {
+		modes = map[string]placeholderMode{}
+	}
+	return &placeholders{
+		numbers:  map[string]int32{},
+		names:    map[int32]string{},
+		modes:    modes,
+		restores: map[string]string{},
+		next:     1,
+	}
 }
 
-// substitute replaces each :name with a zero-padded $n of the same length,
-// so every byte offset in the parse tree still points into the original text
+// substitute replaces each :name with a stand-in of the same length, so every
+// byte offset in the parse tree still points into the original text
 // learn: this is a method. (ph *placeholders) is the receiver, similar to `this` in other
-// learn: languages; a pointer receiver lets the method modify ph. go functions can return several
-// learn: values, and the idiom for failure is returning an error last, where nil means success.
+// learn: languages; a pointer receiver lets the method modify ph.
 func (ph *placeholders) substitute(src string) (string, error) {
-	// learn: := declares new variables and infers their types from the right side. the `if err !=
-	// learn: nil` check right after is go's error handling: errors are ordinary return values, not
-	// learn: exceptions.
 	scan, err := pg.Scan(src)
 	if err != nil {
 		return "", err
 	}
-	// learn: range over a slice yields (index, element). `_` discards the index. this first pass
-	// learn: finds the highest $n already in the file so our generated numbers cannot collide with
-	// learn: real ones.
 	for _, token := range scan.Tokens {
-		// learn: src[a:b] slices a string to bytes a..b-1 without copying. strconv.Atoi parses an
-		// learn: int and returns (value, error). the `if x, err := f(); cond {` form scopes x and
-		// learn: err to the if block.
 		if token.Token == pg.Token_PARAM {
 			if number, err := strconv.Atoi(src[token.Start+1 : token.End]); err == nil && int32(number) >= ph.next {
 				ph.next = int32(number) + 1
 			}
 		}
 	}
-	// learn: var declares a variable holding its zero value. every go type has one (0, "", false,
-	// learn: nil, or a struct of zero values), and a zero strings.Builder is ready to use. the
-	// learn: builder appends efficiently instead of allocating a new string for every +.
 	var out strings.Builder
 	last := 0
 	depth := 0
 	for _, token := range scan.Tokens {
-		// learn: switch compares token.Token against each case. cases do not fall through, so no
-		// learn: break is needed. depth counts [ ] nesting so array slices like tags[1:2] are never
-		// learn: treated as placeholders. the Token_ASCII_NN names are generated constants for
-		// learn: single characters: 91 is [, 93 is ], 58 is :.
 		switch token.Token {
 		case pg.Token_ASCII_91:
 			depth++
@@ -90,17 +91,12 @@ func (ph *placeholders) substitute(src string) (string, error) {
 			if name == "" {
 				continue
 			}
-			number := ph.numberFor(name)
-			digits := strconv.Itoa(int(number))
-			if len(digits) > len(name) {
-				return "", fmt.Errorf("placeholder :%s is too short to substitute", name)
+			standIn, err := ph.standIn(name)
+			if err != nil {
+				return "", err
 			}
 			out.WriteString(src[last:token.Start])
-			// learn: the replacement is zero padded to the exact length of the original, so
-			// learn: :user_id (8 bytes) becomes $0000001 (8 bytes). postgres reads it as parameter
-			// learn: 1, and because the lengths match, every byte offset the parser reports still
-			// learn: points at the same spot in the original text.
-			out.WriteString("$" + strings.Repeat("0", len(name)-len(digits)) + digits)
+			out.WriteString(standIn)
 			last = int(token.End) + len(name)
 		}
 	}
@@ -108,8 +104,61 @@ func (ph *placeholders) substitute(src string) (string, error) {
 	return out.String(), nil
 }
 
-// learn: `value, ok := m[key]` is the comma-ok idiom: ok reports whether the key exists. a plain
-// learn: m[key] on a missing key returns the zero value, which would be ambiguous here.
+// standIn returns the text that replaces :name, exactly as long as :name
+func (ph *placeholders) standIn(name string) (string, error) {
+	width := len(name) + 1
+	number := ph.numberFor(name)
+	digits := strconv.Itoa(int(number))
+	text := ""
+	switch ph.modes[name] {
+	case asFragment:
+		text = "/*" + strings.Repeat("_", width-4) + "*/"
+	case asName:
+		text = "_" + strings.Repeat("0", max(width-1-len(digits), 0)) + digits
+	default:
+		text = "$" + strings.Repeat("0", max(width-1-len(digits), 0)) + digits
+	}
+	if len(text) != width {
+		return "", fmt.Errorf("placeholder :%s is too short to substitute", name)
+	}
+	ph.restores[text] = ":" + name
+	return text, nil
+}
+
+// next mode to try for a placeholder the parser rejected, or false when none is left
+func (ph *placeholders) escalate(name string) bool {
+	switch ph.modes[name] {
+	case asValue:
+		ph.modes[name] = asFragment
+		// a fragment needs room for /* and */
+		if len(name)+1 < 4 {
+			ph.modes[name] = asName
+		}
+		return true
+	case asFragment:
+		ph.modes[name] = asName
+		return true
+	}
+	return false
+}
+
+// learn: \w is not enough here because stand-ins start with $ or _, so the class lists them.
+var standInWord = regexp.MustCompile(`[$A-Za-z0-9_]+`)
+
+// restore puts :name back wherever a stand-in appears as a whole word, such as
+// in a printed identifier or a parser error message
+func (ph *placeholders) restore(text string) string {
+	if len(ph.restores) == 0 {
+		return text
+	}
+	return standInWord.ReplaceAllStringFunc(text, func(word string) string {
+		if name, ok := ph.restores[word]; ok {
+			return name
+		}
+		return word
+	})
+}
+
 func (ph *placeholders) numberFor(name string) int32 {
 	if number, ok := ph.numbers[name]; ok {
 		return number
@@ -212,4 +261,45 @@ func lineCol(text string, pos int) (int, int) {
 	line := strings.Count(before, "\n") + 1
 	col := utf8.RuneCountInString(before[strings.LastIndex(before, "\n")+1:]) + 1
 	return line, col
+}
+
+// typedLiteralTypes are built-in types a value placeholder may follow, as in
+// `date :day` or `interval :span`. keyword types such as integer and
+// timestamp parse as pg_catalog names and are always allowed.
+var typedLiteralTypes = map[string]bool{
+	"date": true, "text": true, "json": true, "jsonb": true, "uuid": true, "bytea": true,
+	"inet": true, "cidr": true, "macaddr": true, "money": true, "xml": true, "timestamptz": true,
+	"timetz": true, "int2": true, "int4": true, "int8": true, "float4": true, "float8": true, "bool": true,
+}
+
+// misreadPlaceholder finds a value placeholder the parser read as a typed
+// literal after an ordinary name, as in `where active :filters`, which parses
+// as a cast to a type called active. it returns the placeholder's offset, or -1.
+func misreadPlaceholder(tree *pg.ParseResult, params *placeholders) int {
+	found := -1
+	var walk func(protoreflect.Message)
+	walk = func(msg protoreflect.Message) {
+		if cast, ok := msg.Interface().(*pg.TypeCast); ok && found < 0 {
+			param := cast.Arg.GetParamRef()
+			typ := cast.TypeName
+			if param != nil && params.names[param.Number] != "" && typ.Location >= 0 && typ.Location < param.Location &&
+				len(typ.Names) == 1 && !typedLiteralTypes[typ.Names[0].GetString_().Sval] {
+				found = int(param.Location)
+			}
+		}
+		msg.Range(func(field protoreflect.FieldDescriptor, value protoreflect.Value) bool {
+			switch {
+			case field.IsList() && field.Kind() == protoreflect.MessageKind:
+				list := value.List()
+				for index := 0; index < list.Len(); index++ {
+					walk(list.Get(index).Message())
+				}
+			case !field.IsList() && !field.IsMap() && field.Kind() == protoreflect.MessageKind:
+				walk(value.Message())
+			}
+			return true
+		})
+	}
+	walk(tree.ProtoReflect())
+	return found
 }

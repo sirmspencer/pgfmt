@@ -1,7 +1,5 @@
 -- find users by :id within a tenant
-select
-  id
-  , :tenant_id as tenant
+select id, :tenant_id as tenant
 from users
 where
   id = :id::bigint

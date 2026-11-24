@@ -14,13 +14,9 @@ where exists (
   where o.user_id = u.id
 );
 
-select
-  t.user_id
-  , t.total
+select t.user_id, t.total
 from (
-  select
-    user_id
-    , sum(total) as total
+  select user_id, sum(total) as total
   from orders
   group by user_id
 ) as t

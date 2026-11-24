@@ -8,7 +8,7 @@ This document lists the formatting rules pgfmt applies. Each rule shows input an
 
 Each rule below was compared with the default SQL code style of the JetBrains SQL formatter, which IntelliJ IDEA Ultimate and DataGrip share. The comparison used DataGrip 2025.1 with an empty code style, run through its command-line formatter on the examples in this document.
 
-3 same · 25 different · 12 not handled by IntelliJ
+3 same · 27 different · 12 not handled by IntelliJ
 
 | Rule | IntelliJ default |
 |---|---|
@@ -18,6 +18,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 | [literal-case](#literal-case) | Not handled |
 | [indentation](#indentation) | Different |
 | [leading-commas](#leading-commas) | Different |
+| [column-lists](#column-lists) | Different |
 | [clause-items](#clause-items) | Different |
 | [conditions](#conditions) | Different |
 | [grouped-conditions](#grouped-conditions) | Different |
@@ -39,6 +40,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 | [function-definitions](#function-definitions) | Different |
 | [statement-separation](#statement-separation) | Different |
 | [line-length](#line-length) | Different |
+| [alignment](#alignment) | Different |
 | [aliases](#aliases) | Not handled |
 | [casts](#casts) | Not handled |
 | [operators](#operators) | Different |
@@ -66,6 +68,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 
 - [indentation](#indentation)
 - [leading-commas](#leading-commas)
+- [column-lists](#column-lists)
 - [clause-items](#clause-items)
 - [conditions](#conditions)
 - [grouped-conditions](#grouped-conditions)
@@ -87,6 +90,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 - [function-definitions](#function-definitions)
 - [statement-separation](#statement-separation)
 - [line-length](#line-length)
+- [alignment](#alignment)
 
 **Normalization**
 
@@ -147,9 +151,7 @@ SELECT UserId, "DisplayName" FROM Public.Users WHERE "Status" = 'Active';
 ↓
 
 ```sql
-select
-  userid
-  , "DisplayName"
+select userid, "DisplayName"
 from public.users
 where "Status" = 'Active';
 ```
@@ -169,10 +171,7 @@ SELECT COALESCE(nickname, first_name), NOW(), amount::NUMERIC(10,2) FROM orders;
 ↓
 
 ```sql
-select
-  coalesce(nickname, first_name)
-  , now()
-  , amount::numeric(10, 2)
+select coalesce(nickname, first_name), now(), amount::numeric(10, 2)
 from orders;
 ```
 
@@ -191,10 +190,7 @@ select NULL, TRUE, FALSE;
 ↓
 
 ```sql
-select
-  null
-  , true
-  , false;
+select null, true, false;
 ```
 
 ---
@@ -216,7 +212,7 @@ select
 **IntelliJ default:** Different: commas trail the item when a list is split across lines.
 
 ```sql
-select id, email, created_at from users;
+select id, email, created_at, updated_at from users;
 ```
 
 ↓
@@ -226,33 +222,19 @@ select
   id
   , email
   , created_at
+  , updated_at
 from users;
 ```
 
 ---
 
-### clause-items
+### column-lists
 
-**A clause with one item keeps the item on the keyword's line. A clause with two or more items places the keyword alone on its line and each item on its own indented line.** The rule applies the same way to `select`, `group by`, `order by`, `set`, `returning`, `using`, and `values`. Test cases: `02-single-item-clauses`, `08-group-order-limit`.
+**`select`, `group by`, `order by`, and `returning` keep three or fewer items on the keyword's line. With four or more items, the keyword is alone on its line and each item is on its own indented line.** This is the same count as the [lists](#lists) rule. A shorter list is also split one item per line when an item spans several lines, such as a `case` expression or a subquery, or when a comment sits between items, so that the comment stays next to its item. Test cases: `01-select-basic`, `07-case-expressions`, `08-group-order-limit`, `10-comments`.
 
-**IntelliJ default:** Different: a single item behaves the same. Several items stay on the keyword's line, and the list is split only when it passes the right margin, with continuation lines aligned under the first item.
+**IntelliJ default:** Different: lists of three or fewer single-line items behave the same. Longer lists stay on the keyword's line until they pass the right margin, and continuation lines are aligned under the first item.
 
-One item in each clause:
-
-```sql
-select user_id from orders group by user_id order by user_id;
-```
-
-↓
-
-```sql
-select user_id
-from orders
-group by user_id
-order by user_id;
-```
-
-Two or more items in each clause:
+Three or fewer items in each clause:
 
 ```sql
 select user_id, status, count(*) from orders group by user_id, status order by user_id, count(*) desc;
@@ -261,30 +243,184 @@ select user_id, status, count(*) from orders group by user_id, status order by u
 ↓
 
 ```sql
-select
-  user_id
-  , status
-  , count(*)
+select user_id, status, count(*)
 from orders
-group by
-  user_id
-  , status
-order by
-  user_id
-  , count(*) desc;
+group by user_id, status
+order by user_id, count(*) desc;
 ```
 
-`distinct` and `distinct on (...)` stay with `select`:
+Four or more items in each clause:
 
 ```sql
-select distinct status from orders;
+select region, account_id, status, day, count(*) from orders group by region, account_id, status, day order by region, account_id, status, day;
 ```
 
 ↓
 
 ```sql
-select distinct status
+select
+  region
+  , account_id
+  , status
+  , day
+  , count(*)
+from orders
+group by
+  region
+  , account_id
+  , status
+  , day
+order by
+  region
+  , account_id
+  , status
+  , day;
+```
+
+`returning` with three and four items:
+
+```sql
+insert into users (id, email) values (:id, :email) returning id, email, created_at;
+```
+
+↓
+
+```sql
+insert into users (id, email)
+values (:id, :email)
+returning id, email, created_at;
+```
+
+```sql
+update users set email = :email where id = :id returning id, email, updated_at, version;
+```
+
+↓
+
+```sql
+update users
+set email = :email
+where id = :id
+returning
+  id
+  , email
+  , updated_at
+  , version;
+```
+
+A multi-line item:
+
+```sql
+select id, case when status = 'a' then 'active' else 'other' end as label from users;
+```
+
+↓
+
+```sql
+select
+  id
+  , case
+    when status = 'a' then 'active'
+    else 'other'
+  end as label
+from users;
+```
+
+A comment between items:
+
+```sql
+select id, -- primary key
+  name from users;
+```
+
+↓
+
+```sql
+select
+  id -- primary key
+  , name
+from users;
+```
+
+`distinct` and `distinct on (...)` stay with `select`:
+
+```sql
+select distinct status, region from orders;
+```
+
+↓
+
+```sql
+select distinct status, region
 from orders;
+```
+
+---
+
+### clause-items
+
+**`set`, `from`, `using`, and `values` keep one item on the keyword's line. With two or more items, the keyword is alone on its line and each item is on its own indented line.** Column lists follow the [column-lists](#column-lists) rule instead. Test cases: `02-single-item-clauses`, `13-insert`, `14-update`.
+
+**IntelliJ default:** Different: a single item behaves the same. Several items stay on the keyword's line until they pass the right margin, with continuation lines aligned under the first item.
+
+One item in each clause:
+
+```sql
+update users set email = :email from accounts where accounts.id = users.account_id;
+```
+
+↓
+
+```sql
+update users
+set email = :email
+from accounts
+where accounts.id = users.account_id;
+```
+
+Two or more items in each clause:
+
+```sql
+update users set email = :email, updated_at = now() from accounts, regions where accounts.id = users.account_id;
+```
+
+↓
+
+```sql
+update users
+set
+  email = :email
+  , updated_at = now()
+from
+  accounts
+  , regions
+where accounts.id = users.account_id;
+```
+
+`values` with one and two rows:
+
+```sql
+insert into tags (name) values ('a');
+```
+
+↓
+
+```sql
+insert into tags (name)
+values ('a');
+```
+
+```sql
+insert into tags (name) values ('a'), ('b');
+```
+
+↓
+
+```sql
+insert into tags (name)
+values
+  ('a')
+  , ('b');
 ```
 
 ---
@@ -401,7 +537,7 @@ select u.id from users u join orders o on o.user_id = u.id cross join regions r;
 ```sql
 select u.id
 from users as u
-join orders as o
+inner join orders as o
   on o.user_id = u.id
 cross join regions as r;
 ```
@@ -426,7 +562,7 @@ from orders as o
 left join payments as p
   on p.order_id = o.id
   and p.status = 'settled'
-join accounts as a
+inner join accounts as a
   using (account_id);
 ```
 
@@ -463,9 +599,7 @@ select t.user_id from (select user_id, sum(total) as total from orders group by 
 ```sql
 select t.user_id
 from (
-  select
-    user_id
-    , sum(total) as total
+  select user_id, sum(total) as total
   from orders
   group by user_id
 ) as t;
@@ -838,9 +972,7 @@ insert into archived_users (id, email) select id, email from users where deleted
 
 ```sql
 insert into archived_users (id, email)
-select
-  id
-  , email
+select id, email
 from users
 where deleted_at is not null;
 ```
@@ -1278,6 +1410,61 @@ select 3;
 
 ---
 
+### alignment
+
+**Nothing is aligned into columns.** Each line is indented by the indentation rule only, and one space separates a name from what follows it. Lining up `=` signs, types, or aliases would make the layout depend on the longest name in a group, and adding one longer name would change every other line in it, which makes diffs and merges noisier.
+
+**IntelliJ default:** Different: `create table` columns and `alter table ... add column` definitions are aligned into a grid, `on conflict ... do update set` assignments are aligned on `=`, and aliases in a multi-line select list are aligned on `as`. Assignments in a plain `update ... set` are not aligned.
+
+Assignments in `set`:
+
+```sql
+update rate_limits set max_requests_per_minute = :max-requests-per-minute, burst = :burst, updated_at = now() where id = :id;
+```
+
+↓
+
+```sql
+update rate_limits
+set
+  max_requests_per_minute = :max-requests-per-minute
+  , burst = :burst
+  , updated_at = now()
+where id = :id;
+```
+
+Columns in `create table`:
+
+```sql
+create table rate_limits (id bigserial primary key, max_requests_per_minute integer not null, burst integer not null default 10, updated_at timestamptz not null default now());
+```
+
+↓
+
+```sql
+create table rate_limits (
+  id bigserial primary key
+  , max_requests_per_minute integer not null
+  , burst integer not null default 10
+  , updated_at timestamptz not null default now()
+);
+```
+
+Aliases in a select list:
+
+```sql
+select count(*) as calls, coalesce(sum(latency_ms), 0) as total_latency_ms, max(called_at) as last_call from calls;
+```
+
+↓
+
+```sql
+select count(*) as calls, coalesce(sum(latency_ms), 0) as total_latency_ms, max(called_at) as last_call
+from calls;
+```
+
+---
+
 ## Normalization
 
 Each of these constructs has several equivalent spellings, and pgfmt always prints the same one. Each output parses to the same syntax tree as its input.
@@ -1314,9 +1501,7 @@ select CAST(created_at AS DATE), '1 day'::interval;
 ↓
 
 ```sql
-select
-  created_at::date
-  , interval '1 day';
+select created_at::date, interval '1 day';
 ```
 
 ---
@@ -1367,12 +1552,12 @@ where a = b;
 
 ### join-keywords
 
-**`inner join` is printed as `join`, and `left outer join` as `left join`.** A join with no condition is printed as `cross join`. Test case: `03-joins`.
+**`join` is printed as `inner join`, so every inner join says so, and `left outer join` is printed as `left join`.** A natural join is printed as `natural inner join`, and a join with no condition as `cross join`. Test case: `03-joins`.
 
-**IntelliJ default:** Not handled: `inner join` and `left outer join` are left as written.
+**IntelliJ default:** Not handled: `join`, `inner join`, and `left outer join` are left as written.
 
 ```sql
-select 1 from a inner join b on b.id = a.id left outer join c on c.id = a.id;
+select 1 from a join b on b.id = a.id left outer join c on c.id = a.id natural join d;
 ```
 
 ↓
@@ -1380,10 +1565,11 @@ select 1 from a inner join b on b.id = a.id left outer join c on c.id = a.id;
 ```sql
 select 1
 from a
-join b
+inner join b
   on b.id = a.id
 left join c
-  on c.id = a.id;
+  on c.id = a.id
+natural inner join d;
 ```
 
 ---
@@ -1447,9 +1633,7 @@ select "user".id, 1 as "order" from "user";
 ↓
 
 ```sql
-select
-  "user".id
-  , 1 as order
+select "user".id, 1 as order
 from "user";
 ```
 
@@ -1472,9 +1656,7 @@ select a, b, from t;
 ↓
 
 ```sql
-select
-  a
-  , b
+select a, b
 from t;
 ```
 
@@ -1491,9 +1673,7 @@ from t;
 ↓
 
 ```sql
-select
-  a
-  , b
+select a, b
 from t;
 ```
 
@@ -1519,9 +1699,7 @@ select a,, b from t;
 ↓
 
 ```sql
-select
-  a
-  , b
+select a, b
 from t;
 ```
 
@@ -1571,9 +1749,19 @@ where active = true; -- trailing
 
 ### placeholders
 
-**`:name` placeholders are kept, including kebab-case names.** A colon inside array brackets, a `::` cast, a string, or a comment is not a placeholder. Subtraction from a placeholder needs spaces: `:limit - 1`. Test case: `09-placeholders`.
+**`:name` placeholders are kept exactly as written.** Names follow Clojure keywords as inquery uses them: kebab-case such as `:user-id`, mixed case, and `?` or `!` are all part of the name. A colon inside array brackets, a `::` cast, a string, or a comment is not a placeholder. Subtraction from a placeholder needs spaces: `:limit - 1`. Test cases: `09-placeholders`, `27-placeholder-fragments`.
 
 **IntelliJ default:** Different: plain `:name` placeholders are kept, but kebab-case placeholders are split into a subtraction: `:user-id` becomes `:user - id`, which changes the query.
+
+inquery replaces each placeholder with raw text, so a placeholder can stand for a value, a fragment of SQL, or a table or column name. pgfmt reads each placeholder in that order and uses the first reading that parses:
+
+1. **A value,** such as `where id = :id` or `order by :sort-column`. This covers most placeholders.
+2. **A fragment** when a value does not fit, such as `:filters` between a `where` condition and `group by`. A fragment is kept where it was written, like a comment: on its own line or at the end of a line. The rest of the statement is formatted as usual. A fragment name needs at least three characters.
+3. **A name** when the statement does not parse without the placeholder, such as `from :table-name`.
+
+A placeholder after an ordinary name, as in `where active :filters`, is read as a fragment rather than as a typed literal. A typed literal on a built-in type, such as `date :day`, remains a value.
+
+Values:
 
 ```sql
 select :user-id, :address-2 from users where id = :id::bigint and tags[1:2] = :tags and note <> 'time: 10:30';
@@ -1582,14 +1770,45 @@ select :user-id, :address-2 from users where id = :id::bigint and tags[1:2] = :t
 ↓
 
 ```sql
-select
-  :user-id
-  , :address-2
+select :user-id, :address-2
 from users
 where
   id = :id::bigint
   and tags[1:2] = :tags
   and note <> 'time: 10:30';
+```
+
+A fragment on its own line:
+
+```sql
+SELECT account_id, COUNT(*) AS orders FROM shop.orders WHERE region = :region
+:filters
+GROUP BY account_id ORDER BY account_id;
+```
+
+↓
+
+```sql
+select account_id, count(*) as orders
+from shop.orders
+where region = :region
+:filters
+group by account_id
+order by account_id;
+```
+
+Fragments at the end of a line, and a name:
+
+```sql
+select id, name :extra-columns from :table-name where active :and-filters;
+```
+
+↓
+
+```sql
+select id, name :extra-columns
+from :table-name
+where active :and-filters;
 ```
 
 ---
@@ -1607,10 +1826,7 @@ SELECT E'a\nb', $tag$raw$tag$, 1.50;
 ↓
 
 ```sql
-select
-  E'a\nb'
-  , $tag$raw$tag$
-  , 1.50;
+select E'a\nb', $tag$raw$tag$, 1.50;
 ```
 
 ---

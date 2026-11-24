@@ -94,32 +94,62 @@ func FormatResult(src string) (*Result, error) {
 // marked, so a caller nesting the output (a function body) can indent it safely
 func formatSQL(src string) (*Result, error) {
 	var fixes []Fixed
+	// modes remembers how each placeholder must be read, learned from failed parses
+	modes := map[string]placeholderMode{}
+	lastFragment := ""
 	for {
-		result, err := formatOnce(src)
+		params := newPlaceholders(modes)
+		result, err := formatOnce(src, params)
 		if err == nil {
 			result.Fixed = fixes
 			return result, nil
 		}
-		fixed, fix, ok := removeStrayComma(src, err)
-		if !ok {
-			// the fixes found so far are still reported next to the error
-			return &Result{Fixed: fixes}, err
+		// the parser stopped at a placeholder: read it as a fragment, then as a name
+		if name, ok := placeholderAt(src, err); ok && params.escalate(name) {
+			lastFragment = ""
+			if modes[name] == asFragment {
+				lastFragment = name
+			}
+			continue
 		}
-		fixes = append(fixes, fix)
-		src = fixed
+		if fixed, fix, ok := removeStrayComma(src, err); ok {
+			fixes = append(fixes, fix)
+			src = fixed
+			continue
+		}
+		// hiding a fragment left a gap the statement needs, so it must be a name
+		if lastFragment != "" && params.escalate(lastFragment) {
+			lastFragment = ""
+			continue
+		}
+		// the fixes found so far are still reported next to the error
+		return &Result{Fixed: fixes}, err
 	}
 }
 
+// placeholderAt returns the :name placeholder where a syntax error happened
+func placeholderAt(src string, err error) (string, bool) {
+	var syntax *SyntaxError
+	if !errors.As(err, &syntax) || syntax.Offset < 0 || syntax.Offset >= len(src) || src[syntax.Offset] != ':' {
+		return "", false
+	}
+	name := placeholderName.FindString(src[syntax.Offset+1:])
+	return name, name != ""
+}
+
 // formatOnce formats src without repairing syntax errors
-func formatOnce(src string) (*Result, error) {
-	params := newPlaceholders()
+func formatOnce(src string, params *placeholders) (*Result, error) {
 	text, err := params.substitute(src)
 	if err != nil {
 		return nil, syntaxError(src, err)
 	}
 	tree, err := pg.Parse(text)
 	if err != nil {
-		return nil, syntaxError(src, err)
+		return nil, restoreMessage(params, syntaxError(src, err))
+	}
+	if offset := misreadPlaceholder(tree, params); offset >= 0 {
+		line, col := lineCol(src, offset)
+		return nil, &SyntaxError{Line: line, Column: col, Offset: offset, Message: "placeholder read as a typed literal"}
 	}
 	source, err := newSource(src, text)
 	if err != nil {
@@ -161,6 +191,15 @@ func syntaxError(src string, err error) error {
 		}
 		line, col := lineCol(src, max(offset, 0))
 		return &SyntaxError{Line: line, Column: col, Message: pgErr.Message, Offset: offset}
+	}
+	return err
+}
+
+// restoreMessage shows :name instead of its stand-in in a syntax error message
+func restoreMessage(params *placeholders, err error) error {
+	var syntax *SyntaxError
+	if errors.As(err, &syntax) {
+		syntax.Message = params.restore(syntax.Message)
 	}
 	return err
 }
@@ -292,15 +331,26 @@ func (p *printer) tryStatement(span *statementSpan) (body string, reason string)
 			body, reason = "", "unsupported "+skip.what
 		}
 	}()
-	printed := p.statement(span.raw.Stmt)
+	// placeholders read as names were printed as their stand-ins
+	printed := p.params.restore(p.statement(span.raw.Stmt))
 	if !p.sameTree(span.raw.Stmt, printed) {
 		return "", "formatting would change the statement"
 	}
 	lines, tags := splitMarks(printed)
+	// placeholder fragments after the last token belong to the statement, so
+	// they stay in front of the semicolon, in their original order
+	var inner []*pg.ScanToken
+	for _, comment := range span.inner {
+		if comment.Start > span.end && strings.HasPrefix(p.src.orig[comment.Start:comment.End], ":") {
+			lines[len(lines)-1] += " " + commentText(p.src, comment)
+			continue
+		}
+		inner = append(inner, comment)
+	}
 	if span.semicolon {
 		lines[len(lines)-1] += ";"
 	}
-	for _, comment := range span.inner {
+	for _, comment := range inner {
 		lines, tags = p.placeComment(lines, tags, comment)
 	}
 	for _, comment := range span.trailing {

@@ -3,9 +3,7 @@ set
   email = :email
   , updated_at = now()
 where id = :id
-returning
-  id
-  , email;
+returning id, email;
 
 update users
 set active = false

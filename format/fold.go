@@ -86,7 +86,7 @@ func (src *source) cleanText(from, to int32) string {
 		out.WriteString(gap)
 		text := src.orig[token.Start:token.End]
 		// placeholders were swapped for $n tokens, so their original :name text is kept as is
-		if token.Token != pg.Token_PARAM && foldable(token, text) {
+		if token.Token != pg.Token_PARAM && !strings.HasPrefix(text, ":") && foldable(token, text) {
 			text = asciiLower(text)
 		}
 		out.WriteString(text)
