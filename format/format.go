@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -71,6 +72,17 @@ type statementSpan struct {
 // learn: the whole pipeline: swap placeholders for $n, parse, scan tokens, split the file into
 // learn: statements with their comments, print each statement, then join them with blank lines.
 func FormatResult(src string) (*Result, error) {
+	result, err := formatSQL(src)
+	if err != nil {
+		return nil, err
+	}
+	result.Output = strings.ReplaceAll(result.Output, literalNewline, "\n")
+	return result, nil
+}
+
+// formatSQL is FormatResult, except that newlines inside literals are still
+// marked, so a caller nesting the output (a function body) can indent it safely
+func formatSQL(src string) (*Result, error) {
 	params := newPlaceholders()
 	text, err := params.substitute(src)
 	if err != nil {
@@ -101,7 +113,6 @@ func FormatResult(src string) (*Result, error) {
 		groups = append(groups, strings.TrimSuffix(leadingComments(source, footer, -1), "\n"))
 	}
 	output := strings.Join(groups, "\n\n")
-	output = strings.ReplaceAll(output, literalNewline, "\n")
 	if output != "" {
 		output += "\n"
 	}
@@ -210,7 +221,10 @@ func (p *printer) formatStatement(span *statementSpan) (string, string) {
 	if reason == "" {
 		return body, ""
 	}
-	text := p.src.orig[span.start:span.through]
+	text := p.src.cleanText(span.start, span.through)
+	if !p.sameTree(span.raw.Stmt, text) {
+		text = p.src.orig[span.start:span.through]
+	}
 	for _, comment := range span.trailing {
 		text += " " + commentText(p.src, comment)
 	}
@@ -321,6 +335,13 @@ func normalize(node *pg.Node) proto.Message {
 		if typ, ok := msg.Interface().(*pg.TypeName); ok && len(typ.Names) == 2 &&
 			typ.Names[0].GetString_() != nil && typ.Names[0].GetString_().Sval == "pg_catalog" {
 			typ.Names = typ.Names[1:]
+		}
+		// option order does not matter to postgres, and the body is printed last
+		if fn, ok := msg.Interface().(*pg.CreateFunctionStmt); ok {
+			sort.SliceStable(fn.Options, func(i, j int) bool {
+				return fn.Options[i].GetDefElem().Defname < fn.Options[j].GetDefElem().Defname
+			})
+			canonicalizeBody(fn)
 		}
 		var clear []protoreflect.FieldDescriptor
 		msg.Range(func(field protoreflect.FieldDescriptor, value protoreflect.Value) bool {

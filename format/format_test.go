@@ -118,8 +118,8 @@ func TestPlaceholders(t *testing.T) {
 		{"inside a string", "select ':not_a_param'", "select ':not_a_param'\n"},
 		{"inside a comment", "-- uses :id\nselect :id", "-- uses :id\nselect :id\n"},
 		{"array slice", "select tags[1:2] from t", "select tags[1:2]\nfrom t\n"},
-		{"repeated name", "select :a, :a", "select\n    :a,\n    :a\n"},
-		{"mixed with numbered params", "select $1, :name", "select\n    $1,\n    :name\n"},
+		{"repeated name", "select :a, :a", "select\n  :a\n  , :a\n"},
+		{"mixed with numbered params", "select $1, :name", "select\n  $1\n  , :name\n"},
 		{"keyword as name", "select * from t limit :limit offset :offset", "select *\nfrom t\nlimit :limit\noffset :offset\n"},
 	}
 	for _, test := range tests {
@@ -142,7 +142,7 @@ func TestBlankLinesAroundComments(t *testing.T) {
 func TestUnsupportedStatementIsKept(t *testing.T) {
 	input := "SELECT a FROM t;\nVACUUM   ANALYZE t;\nselect b from t\n"
 	result := formatOrFail(t, input)
-	assertOutput(t, result.Output, "select a\nfrom t;\n\nVACUUM   ANALYZE t;\n\nselect b\nfrom t\n")
+	assertOutput(t, result.Output, "select a\nfrom t;\n\nvacuum analyze t;\n\nselect b\nfrom t\n")
 	if len(result.Skipped) != 1 || result.Skipped[0].Line != 2 {
 		t.Errorf("skipped = %+v, want one statement on line 2", result.Skipped)
 	}
@@ -191,8 +191,8 @@ func TestPrecedenceIsKept(t *testing.T) {
 func TestQuotedNames(t *testing.T) {
 	tests := []struct{ input, want string }{
 		{`select "user".id from "user"`, "select \"user\".id\nfrom \"user\"\n"},
-		{`select "left"("x"), "left".id from "left"`, "select\n    left(x),\n    \"left\".id\nfrom \"left\"\n"},
-		{`select 1 as "order", 2 as "Two"`, "select\n    1 as order,\n    2 as \"Two\"\n"},
+		{`select "left"("x"), "left".id from "left"`, "select\n  left(x)\n  , \"left\".id\nfrom \"left\"\n"},
+		{`select 1 as "order", 2 as "Two"`, "select\n  1 as order\n  , 2 as \"Two\"\n"},
 		{`select "Mixed" from t`, "select \"Mixed\"\nfrom t\n"},
 	}
 	for _, test := range tests {
@@ -214,10 +214,10 @@ func TestStringLiteralsAreUntouched(t *testing.T) {
 
 func TestRestrictedSyntax(t *testing.T) {
 	tests := []struct{ input, want string }{
-		{"select (comp).a, (t.comp).b from t", "select\n    (comp).a,\n    (t.comp).b\nfrom t\n"},
-		{`select "coalesce"(1), "extract"('a', b)`, "select\n    \"coalesce\"(1),\n    \"extract\"('a', b)\n"},
+		{"select (comp).a, (t.comp).b from t", "select\n  (comp).a\n  , (t.comp).b\nfrom t\n"},
+		{`select "coalesce"(1), "extract"('a', b)`, "select\n  \"coalesce\"(1)\n  , \"extract\"('a', b)\n"},
 		{"create table t (a timestamp default (now() at time zone 'utc'), b int default -1)",
-			"create table t (\n    a timestamp default (now() at time zone 'utc'),\n    b integer default -1\n)\n"},
+			"create table t (\n  a timestamp default (now() at time zone 'utc')\n  , b integer default -1\n)\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
@@ -228,4 +228,40 @@ func TestRestrictedSyntax(t *testing.T) {
 			assertOutput(t, result.Output, test.want)
 		})
 	}
+}
+
+func TestFunctionBodyCase(t *testing.T) {
+	tests := []struct{ name, input, want string }{
+		{"plpgsql is lowercased and indented",
+			"create function f() returns trigger language plpgsql as $fn$\nBEGIN\n  RAISE NOTICE 'Keep %', NEW.Id;\n  RETURN \"Quoted\";\nEND;\n$fn$",
+			"create function f()\n  returns trigger\n  language plpgsql\nas $fn$\n  begin\n    raise notice 'Keep %', new.id;\n    return \"Quoted\";\n  end;\n$fn$\n"},
+		{"shared indentation is replaced, nesting and strings are kept",
+			"create function f() returns int as $$\n      BEGIN\n          RAISE NOTICE 'two\n   lines';\n\n          RETURN 1;\n      END;\n$$ language plpgsql",
+			"create function f()\n  returns integer\n  language plpgsql\nas $$\n  begin\n      raise notice 'two\n   lines';\n\n      return 1;\n  end;\n$$\n"},
+		{"single line sql is lowercased",
+			"create function f() returns int language sql as $$ SELECT 1 $$",
+			"create function f()\n  returns integer\n  language sql\nas $$ select 1 $$\n"},
+		{"other languages are kept",
+			"create function f() returns int language plpython3u as $$\nReturn 1\n$$",
+			"create function f()\n  returns integer\n  language plpython3u\nas $$\nReturn 1\n$$\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := formatOrFail(t, test.input)
+			if len(result.Skipped) > 0 {
+				t.Errorf("skipped: %+v", result.Skipped)
+			}
+			assertOutput(t, result.Output, test.want)
+		})
+	}
+}
+
+func TestUnsupportedStatementCleanup(t *testing.T) {
+	input := "COPY   Users (Id , Name)  FROM STDIN   WITH (FORMAT csv)\n   WHERE note = 'Keep  This' AND id = :User-Id ;"
+	want := "copy users (id, name) from stdin with (format csv)\n   where note = 'Keep  This' and id = :User-Id;\n"
+	result := formatOrFail(t, input)
+	if len(result.Skipped) != 1 {
+		t.Errorf("skipped = %+v, want one", result.Skipped)
+	}
+	assertOutput(t, result.Output, want)
 }

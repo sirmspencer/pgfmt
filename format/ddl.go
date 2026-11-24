@@ -44,7 +44,7 @@ func (p *printer) createStmt(stmt *pg.CreateStmt) string {
 			fail("table element %T", node.Node)
 		}
 	}
-	return head + " (\n" + indent(strings.Join(elements, ",\n")) + "\n)"
+	return head + " (\n" + indent(joinLeading(elements)) + "\n)"
 }
 
 func (p *printer) columnDef(col *pg.ColumnDef) string {
@@ -185,7 +185,7 @@ func (p *printer) alterTableStmt(stmt *pg.AlterTableStmt) string {
 	if len(cmds) == 1 {
 		return head + " " + cmds[0]
 	}
-	return head + "\n" + indent(strings.Join(cmds, ",\n"))
+	return head + "\n" + indent(joinLeading(cmds))
 }
 
 func (p *printer) alterTableCmd(cmd *pg.AlterTableCmd) string {
@@ -369,19 +369,36 @@ func (p *printer) createFunctionStmt(stmt *pg.CreateFunctionStmt) string {
 		}
 		params[index] = text
 	}
-	lines := []string{head + qualifiedName(stmt.Funcname, funcIdent) + "(" + strings.Join(params, ", ") + ")"}
+	lines := []string{head + list(qualifiedName(stmt.Funcname, funcIdent)+"(", params, ")")}
 	if stmt.ReturnType != nil {
-		lines = append(lines, "returns "+p.typeName(stmt.ReturnType))
+		lines = append(lines, indentUnit+"returns "+p.typeName(stmt.ReturnType))
 	}
+	language := ""
 	for _, node := range stmt.Options {
-		lines = append(lines, p.functionOption(node.GetDefElem()))
+		if opt := node.GetDefElem(); opt.Defname == "language" && opt.Arg.GetString_() != nil {
+			language = opt.Arg.GetString_().Sval
+		}
+	}
+	// options are indented under the signature; the body comes last at column 0
+	// so its closing delimiter lines up with as
+	body := ""
+	for _, node := range stmt.Options {
+		opt := node.GetDefElem()
+		if opt.Defname == "as" {
+			body = p.functionOption(opt, language)
+			continue
+		}
+		lines = append(lines, indentUnit+p.functionOption(opt, language))
+	}
+	if body != "" {
+		lines = append(lines, body)
 	}
 	return strings.Join(lines, "\n")
 }
 
 // learn: the flag, word, and number closures validate an option's argument. fail() never returns,
 // learn: but go cannot know that, so a return statement is still required after it.
-func (p *printer) functionOption(opt *pg.DefElem) string {
+func (p *printer) functionOption(opt *pg.DefElem, language string) string {
 	flag := func() bool {
 		if opt.Arg == nil || opt.Arg.GetBoolean() == nil {
 			fail("function option %s", opt.Defname)
@@ -413,6 +430,13 @@ func (p *printer) functionOption(opt *pg.DefElem) string {
 		body, ok := p.src.stringAfter(opt.Location)
 		if !ok {
 			fail("function body")
+		}
+		// sql and plpgsql fold case like sql does; other languages such as plpython must stay as written
+		switch language {
+		case "sql":
+			body = formatSQLBody(body)
+		case "plpgsql":
+			body = formatPlpgsqlBody(body)
 		}
 		return "as " + strings.ReplaceAll(body, "\n", literalNewline)
 	case "language":

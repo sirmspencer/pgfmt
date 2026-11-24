@@ -14,14 +14,16 @@ pgfmt formats PostgreSQL `.sql` files with a single fixed style, so that every e
 
 ## Style
 
-The style is defined by the input and expected pairs in `testdata/cases`. In summary:
+The style is defined by the input and expected pairs in `testdata/cases` and documented rule by rule in [rules.md](rules.md). In summary:
 
 - Keywords, functions, types, and unquoted identifiers are lowercase. Quoted identifiers are not changed.
-- Indentation is four spaces.
-- A clause with one item stays on one line (`select id`, `where id = :id`). A clause with several items places each item on its own indented line, with trailing commas.
+- Indentation is two spaces.
+- A clause with one item stays on one line (`select id`, `where id = :id`). A clause with several items places each item on its own indented line, with a leading comma on each line after the first.
+- Parenthesized lists, including function arguments, stay on one line up to three items and are split one item per line from four items.
 - Joins align with `from`. The `on` condition is indented beneath the join, and additional `and` conditions align with `on`.
 - Subqueries and grouped `and`/`or` conditions open a parenthesis at the end of the line and close it on a separate line.
-- Statements are separated by one blank line.
+- Set operators such as `union` have a blank line before and after.
+- Statements are separated by one blank line. There is no line length limit.
 
 ## Installation
 

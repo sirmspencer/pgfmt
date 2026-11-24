@@ -1,11 +1,11 @@
 update users
 set
-    email = :email,
-    updated_at = now()
+  email = :email
+  , updated_at = now()
 where id = :id
 returning
-    id,
-    email;
+  id
+  , email;
 
 update users
 set active = false
@@ -15,5 +15,5 @@ update orders as o
 set status = 'void'
 from users as u
 where
-    u.id = o.user_id
-    and u.deleted_at is not null;
+  u.id = o.user_id
+  and u.deleted_at is not null;

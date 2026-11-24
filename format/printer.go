@@ -13,7 +13,7 @@ import (
 // learn: are safe as invisible markers inside the text we build. literalNewline stands in for
 // learn: newlines inside string literals so indent() cannot change a literal's contents.
 const (
-	indentUnit     = "    "
+	indentUnit     = "  "
 	markStart      = "\x01"
 	markEnd        = "\x02"
 	literalNewline = "\x03"
@@ -87,12 +87,30 @@ func indent(text string) string {
 
 // clause prints a keyword with its items: inline for one item, one per line otherwise
 // learn: this one helper produces the house style: `select id` for one item, a keyword followed by
-// learn: indented, comma separated lines for several.
+// learn: indented lines for several, with the comma leading each line after the first.
 func clause(keyword string, items []string) string {
 	if len(items) == 1 {
 		return keyword + " " + items[0]
 	}
-	return keyword + "\n" + indent(strings.Join(items, ",\n"))
+	return keyword + "\n" + indent(joinLeading(items))
+}
+
+// maxInlineItems is the longest parenthesized list that stays on one line
+const maxInlineItems = 3
+
+// joinLeading puts each item on its own line, with a comma before every item after the first
+func joinLeading(items []string) string {
+	return strings.Join(items, "\n, ")
+}
+
+// list prints a parenthesized list on one line when it has at most
+// maxInlineItems items, and one item per line otherwise
+// learn: open and close are passed in so one helper serves "name(" ")", "in (" ")", and "array[" "]".
+func list(open string, items []string, close string) string {
+	if len(items) <= maxInlineItems {
+		return open + strings.Join(items, ", ") + close
+	}
+	return open + "\n" + indent(joinLeading(items)) + "\n" + close
 }
 
 // conditionItems splits a top-level and/or into lines led by their connective
@@ -170,8 +188,16 @@ func (p *printer) statement(node *pg.Node) string {
 // learn: parts collects the clauses in order. append may need to grow the slice and return a new
 // learn: one, which is why it is always written as parts = append(parts, x).
 func (p *printer) selectStmt(stmt *pg.SelectStmt) string {
+	into := ""
 	if stmt.IntoClause != nil {
-		fail("select into")
+		// plpgsql uses select ... into variable; plain sql reads it as create table
+		clause := stmt.IntoClause
+		if clause.Rel == nil || len(clause.ColNames) > 0 || clause.AccessMethod != "" || len(clause.Options) > 0 ||
+			clause.OnCommit != pg.OnCommitAction_ONCOMMIT_NOOP || clause.TableSpaceName != "" || clause.ViewQuery != nil ||
+			clause.SkipData || stmt.Op != pg.SetOperation_SETOP_NONE {
+			fail("select into option")
+		}
+		into = "into " + persistence(clause.Rel) + p.rangeVar(clause.Rel)
 	}
 	var parts []string
 	if stmt.WithClause != nil {
@@ -187,11 +213,15 @@ func (p *printer) selectStmt(stmt *pg.SelectStmt) string {
 		if stmt.All {
 			word += " all"
 		}
-		parts = append(parts, p.setOperand(stmt, stmt.Larg, false), word, p.setOperand(stmt, stmt.Rarg, true))
+		// the empty strings become blank lines around the set operator
+		parts = append(parts, p.setOperand(stmt, stmt.Larg, false), "", word, "", p.setOperand(stmt, stmt.Rarg, true))
 	case len(stmt.ValuesLists) > 0:
 		parts = append(parts, p.values(stmt.ValuesLists))
 	default:
 		parts = append(parts, p.selectList(stmt))
+		if into != "" {
+			parts = append(parts, into)
+		}
 		if len(stmt.FromClause) > 0 {
 			parts = append(parts, clause("from", p.fromItems(stmt.FromClause)))
 		}
@@ -293,7 +323,7 @@ func (p *printer) markedExprs(nodes []*pg.Node) []string {
 func (p *printer) values(lists []*pg.Node) string {
 	rows := make([]string, len(lists))
 	for index, node := range lists {
-		rows[index] = markNode(node) + "(" + p.exprList(node.GetList().Items) + ")"
+		rows[index] = markNode(node) + list("(", p.exprs(node.GetList().Items), ")")
 	}
 	return clause("values", rows)
 }
@@ -322,7 +352,7 @@ func (p *printer) with(with *pg.WithClause) string {
 		}
 		ctes[index] = text + p.subquery(cte.Ctequery)
 	}
-	return head + strings.Join(ctes, ",\n")
+	return head + strings.Join(ctes, "\n, ")
 }
 
 func (p *printer) locking(lock *pg.LockingClause) string {
@@ -497,7 +527,7 @@ func (p *printer) insertStmt(stmt *pg.InsertStmt) string {
 			}
 			cols[index] = ident(target.Name)
 		}
-		head += " (" + strings.Join(cols, ", ") + ")"
+		head += " " + list("(", cols, ")")
 	}
 	parts = append(parts, mark(stmt.Relation.Location)+head)
 	if stmt.SelectStmt == nil {

@@ -82,11 +82,16 @@ func (p *printer) operand(node *pg.Node, minPrec int) string {
 
 // learn: make([]string, n) allocates a slice with n empty strings that we then fill by index.
 func (p *printer) exprList(nodes []*pg.Node) string {
+	return strings.Join(p.exprs(nodes), ", ")
+}
+
+// exprs prints each node, for callers that lay the items out themselves
+func (p *printer) exprs(nodes []*pg.Node) []string {
 	parts := make([]string, len(nodes))
 	for index, node := range nodes {
 		parts[index] = p.expr(node)
 	}
-	return strings.Join(parts, ", ")
+	return parts
 }
 
 func (p *printer) exprPrec(node *pg.Node) (string, int) {
@@ -140,24 +145,24 @@ func (p *printer) exprPrec(node *pg.Node) (string, int) {
 	case node.GetCaseExpr() != nil:
 		return p.caseExpr(node.GetCaseExpr()), precAtom
 	case node.GetCoalesceExpr() != nil:
-		return "coalesce(" + p.exprList(node.GetCoalesceExpr().Args) + ")", precAtom
+		return list("coalesce(", p.exprs(node.GetCoalesceExpr().Args), ")"), precAtom
 	case node.GetMinMaxExpr() != nil:
 		minMax := node.GetMinMaxExpr()
 		name := "greatest"
 		if minMax.Op == pg.MinMaxOp_IS_LEAST {
 			name = "least"
 		}
-		return name + "(" + p.exprList(minMax.Args) + ")", precAtom
+		return list(name+"(", p.exprs(minMax.Args), ")"), precAtom
 	case node.GetSqlvalueFunction() != nil:
 		return sqlValueFunction(node.GetSqlvalueFunction()), precAtom
 	case node.GetAArrayExpr() != nil:
-		return "array[" + p.exprList(node.GetAArrayExpr().Elements) + "]", precAtom
+		return list("array[", p.exprs(node.GetAArrayExpr().Elements), "]"), precAtom
 	case node.GetRowExpr() != nil:
 		row := node.GetRowExpr()
 		if row.RowFormat == pg.CoercionForm_COERCE_IMPLICIT_CAST {
-			return "(" + p.exprList(row.Args) + ")", precAtom
+			return list("(", p.exprs(row.Args), ")"), precAtom
 		}
-		return "row(" + p.exprList(row.Args) + ")", precAtom
+		return list("row(", p.exprs(row.Args), ")"), precAtom
 	case node.GetAIndirection() != nil:
 		return p.indirection(node.GetAIndirection()), precAtom
 	case node.GetCollateClause() != nil:
@@ -282,11 +287,11 @@ func (p *printer) aExpr(expr *pg.A_Expr) (string, int) {
 		if op == "<>" {
 			word = " not in ("
 		}
-		list := expr.Rexpr.GetList()
-		if list == nil {
+		values := expr.Rexpr.GetList()
+		if values == nil {
 			fail("in without list")
 		}
-		return p.operand(expr.Lexpr, precLike+1) + word + p.exprList(list.Items) + ")", precLike
+		return p.operand(expr.Lexpr, precLike+1) + list(word, p.exprs(values.Items), ")"), precLike
 	case pg.A_Expr_Kind_AEXPR_LIKE, pg.A_Expr_Kind_AEXPR_ILIKE:
 		words := map[string]string{"~~": " like ", "!~~": " not like ", "~~*": " ilike ", "!~~*": " not ilike "}
 		word, ok := words[op]
@@ -389,20 +394,24 @@ func (p *printer) funcCall(call *pg.FuncCall) (string, int) {
 	if call.AggWithinGroup || call.FuncVariadic {
 		fail("function call form")
 	}
-	var args string
+	name := qualifiedName(call.Funcname, funcIdent)
+	text := ""
 	switch {
 	case call.AggStar:
-		args = "*"
+		text = name + "(*)"
+	case call.AggDistinct || len(call.AggOrder) > 0:
+		// aggregate modifiers keep the arguments on one line
+		args := p.exprList(call.Args)
+		if call.AggDistinct {
+			args = "distinct " + args
+		}
+		if len(call.AggOrder) > 0 {
+			args += " order by " + p.sortList(call.AggOrder)
+		}
+		text = name + "(" + args + ")"
 	default:
-		args = p.exprList(call.Args)
+		text = list(name+"(", p.exprs(call.Args), ")")
 	}
-	if call.AggDistinct {
-		args = "distinct " + args
-	}
-	if len(call.AggOrder) > 0 {
-		args += " order by " + p.sortList(call.AggOrder)
-	}
-	text := qualifiedName(call.Funcname, funcIdent) + "(" + args + ")"
 	if call.AggFilter != nil {
 		text += " filter (where " + p.expr(call.AggFilter) + ")"
 	}
