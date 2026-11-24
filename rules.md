@@ -6,6 +6,54 @@ This document lists the formatting rules pgfmt applies. Each rule shows input an
 
 ✅ implemented · 🔒 required by the parser, not a style choice
 
+## IntelliJ comparison
+
+Each rule below was compared with the default SQL code style of the JetBrains SQL formatter, which IntelliJ IDEA Ultimate and DataGrip share. The comparison used DataGrip 2025.1 with an empty code style, run through its command-line formatter on the examples in this document.
+
+3 same · 25 different · 11 not handled by IntelliJ
+
+| Rule | IntelliJ default |
+|---|---|
+| [keyword-case](#keyword-case) | Not handled |
+| [identifier-case](#identifier-case) | Not handled |
+| [function-and-type-case](#function-and-type-case) | Not handled |
+| [literal-case](#literal-case) | Not handled |
+| [indentation](#indentation) | Different |
+| [leading-commas](#leading-commas) | Different |
+| [clause-items](#clause-items) | Different |
+| [conditions](#conditions) | Different |
+| [grouped-conditions](#grouped-conditions) | Different |
+| [joins](#joins) | Different |
+| [join-conditions](#join-conditions) | Different |
+| [subqueries](#subqueries) | Different |
+| [lists](#lists) | Different |
+| [ctes](#ctes) | Different |
+| [case-expressions](#case-expressions) | Different |
+| [set-operations](#set-operations) | Different |
+| [limit-and-offset](#limit-and-offset) | Different |
+| [insert](#insert) | Different |
+| [update](#update) | Different |
+| [delete](#delete) | Different |
+| [upsert](#upsert) | Different |
+| [create-table](#create-table) | Different |
+| [alter-table](#alter-table) | Different |
+| [create-index](#create-index) | Not handled |
+| [function-definitions](#function-definitions) | Different |
+| [statement-separation](#statement-separation) | Different |
+| [line-length](#line-length) | Different |
+| [aliases](#aliases) | Not handled |
+| [casts](#casts) | Not handled |
+| [operators](#operators) | Different |
+| [join-keywords](#join-keywords) | Not handled |
+| [type-names](#type-names) | Not handled |
+| [parentheses](#parentheses) | Not handled |
+| [quoting](#quoting) | Not handled |
+| [comments](#comments) | Same |
+| [placeholders](#placeholders) | Different |
+| [literals](#literals) | Same |
+| [semicolons](#semicolons) | Same |
+| [unsupported-statements](#unsupported-statements) | Different |
+
 ## Index
 
 **Case**
@@ -67,6 +115,8 @@ This document lists the formatting rules pgfmt applies. Each rule shows input an
 
 **Keywords are lowercase.** Test case: `01-select-basic`.
 
+**IntelliJ default:** Not handled: keyword case is left as written.
+
 ```sql
 SELECT u.id FROM users u WHERE u.active = TRUE;
 ```
@@ -84,6 +134,8 @@ where u.active = true;
 ### identifier-case
 
 **Unquoted identifiers are lowercase; quoted identifiers are unchanged.** PostgreSQL folds unquoted identifiers to lowercase, so `UserId` and `userid` name the same column. A quoted identifier is case sensitive and keeps its quotes. String contents are never changed. Test case: `21-identifier-case`.
+
+**IntelliJ default:** Not handled: identifier case is left as written.
 
 ```sql
 SELECT UserId, "DisplayName" FROM Public.Users WHERE "Status" = 'Active';
@@ -105,6 +157,8 @@ where "Status" = 'Active';
 
 **Function names and type names are lowercase.** Test case: `11-functions-and-casts`.
 
+**IntelliJ default:** Not handled: function and type name case is left as written.
+
 ```sql
 SELECT COALESCE(nickname, first_name), NOW(), amount::NUMERIC(10,2) FROM orders;
 ```
@@ -124,6 +178,8 @@ from orders;
 ### literal-case
 
 **`true`, `false`, and `null` are lowercase.** Test case: `22-operators-and-literals`.
+
+**IntelliJ default:** Not handled: `NULL`, `TRUE`, and `FALSE` are left as written.
 
 ```sql
 select NULL, TRUE, FALSE;
@@ -146,11 +202,15 @@ select
 
 **Each level is indented by two spaces.** Tabs are not used. Every rule below that indents a line uses this unit.
 
+**IntelliJ default:** Different: four spaces, and continuation lines are aligned under the first item instead of indented by a fixed unit.
+
 ---
 
 ### leading-commas
 
 **When a list is split across lines, each line after the first starts with a comma.** This applies to every multi-line list: select items, `group by`, `order by`, `set`, `returning`, CTEs, long parenthesized lists, table columns, and `alter table` actions. Lists that stay on one line use ordinary `, ` separators. Test case: `01-select-basic`.
+
+**IntelliJ default:** Different: commas trail the item when a list is split across lines.
 
 ```sql
 select id, email, created_at from users;
@@ -171,6 +231,8 @@ from users;
 ### clause-items
 
 **A clause with one item keeps the item on the keyword's line. A clause with two or more items places the keyword alone on its line and each item on its own indented line.** The rule applies the same way to `select`, `group by`, `order by`, `set`, `returning`, `using`, and `values`. Test cases: `02-single-item-clauses`, `08-group-order-limit`.
+
+**IntelliJ default:** Different: a single item behaves the same. Several items stay on the keyword's line, and the list is split only when it passes the right margin, with continuation lines aligned under the first item.
 
 One item in each clause:
 
@@ -227,6 +289,8 @@ from orders;
 ### conditions
 
 **`where` and `having` follow the clause-items rule, with `and` or `or` leading each condition after the first.** A single condition stays on the keyword's line. Two or more conditions place the keyword alone on its line and each condition on its own indented line. Test cases: `04-where-boolean`, `24-conditions`.
+
+**IntelliJ default:** Different: a single condition behaves the same. With several conditions, the first stays on the `where` or `having` line and the rest are aligned beneath it, led by `and` or `or`.
 
 `where` with one condition:
 
@@ -297,6 +361,8 @@ having
 
 **A group of `and`/`or` conditions inside a condition list opens a parenthesis at the end of the line, indents its contents, and closes the parenthesis on its own line.** A single negated condition such as `not (x like y)` stays on one line. Test case: `04-where-boolean`.
 
+**IntelliJ default:** Different: a parenthesized group stays on one line, such as `and (role = 'admin' or role = 'owner')`.
+
 ```sql
 select id from users where active = true and (role = 'admin' or role = 'owner') and not (email like '%@example.com');
 ```
@@ -321,6 +387,8 @@ where
 
 **Each join starts at the same level as `from`.** Test case: `03-joins`.
 
+**IntelliJ default:** Different: joins are indented so that they align after `from`, nine spaces in.
+
 ```sql
 select u.id from users u join orders o on o.user_id = u.id cross join regions r;
 ```
@@ -340,6 +408,8 @@ cross join regions as r;
 ### join-conditions
 
 **`on` and `using` are on the line below the join, indented one level. Additional conditions align with `on`.** Test case: `03-joins`.
+
+**IntelliJ default:** Different: `on` and `using` stay on the join's line, and additional conditions stay on that line too.
 
 ```sql
 select p.name from orders o left join payments p on p.order_id = o.id and p.status = 'settled' join accounts a using (account_id);
@@ -362,6 +432,8 @@ join accounts as a
 ### subqueries
 
 **A subquery opens a parenthesis at the end of the line, indents its body, and closes the parenthesis on its own line, aligned with the start of the line that opened it.** This applies to `in`, `exists`, scalar subqueries, and subqueries in `from`. Test case: `05-subqueries`.
+
+**IntelliJ default:** Different: a subquery stays on one line inside its parentheses unless it passes the right margin.
 
 ```sql
 select id from users where id in (select user_id from orders where total > 100);
@@ -420,6 +492,8 @@ from users as u;
 ### lists
 
 **A parenthesized list with three or fewer items stays on one line. A list with four or more items keeps the opening parenthesis on its line, places each item on its own indented line with leading commas, and puts the closing parenthesis on its own line.** This covers function arguments, `in (...)` value lists, `coalesce`, `greatest`, `least`, `array[...]`, row values, `insert` column lists, and `values` rows. Aggregate calls with `distinct` or `order by` inside the parentheses stay on one line, as do window specifications in `over (...)` and type modifiers such as `numeric(10, 2)`. Test case: `25-long-lists`.
+
+**IntelliJ default:** Different: lists of three or fewer items behave the same. Longer lists stay on one line and are split only when they pass the right margin. A space is added after `array`, as in `array [u.a, u.b]`.
 
 `in` lists with three and four items:
 
@@ -553,6 +627,8 @@ from t;
 
 **Each common table expression opens with `name as (`, indents its body, and closes with `)` at the start of a line. Each later CTE starts its line with a comma.** Test case: `06-ctes`.
 
+**IntelliJ default:** Different: each CTE body stays on one line, later CTEs are aligned under the first, and commas trail.
+
 ```sql
 with active as (select id from users where active), totals as (select user_id from orders) select a.id from active a;
 ```
@@ -578,6 +654,8 @@ from active as a;
 ### case-expressions
 
 **A `case` expression places each `when` and the `else` on its own indented line and closes with `end`.** Test case: `07-case-expressions`.
+
+**IntelliJ default:** Different: a `case` expression stays on one line.
 
 ```sql
 select CASE WHEN status='a' THEN 'active' ELSE 'unknown' END as label from users;
@@ -617,6 +695,8 @@ from users;
 
 **`union`, `intersect`, and `except` are alone on their lines, with a blank line before and after.** Test case: `12-set-operations`.
 
+**IntelliJ default:** Different: `union` is alone on its line, the same as pgfmt, but without blank lines before and after.
+
 ```sql
 select id from users union all select id from archived_users;
 ```
@@ -639,6 +719,8 @@ from archived_users;
 
 **`limit` and `offset` are each on their own line.** Test case: `08-group-order-limit`.
 
+**IntelliJ default:** Different: `limit` and `offset` share one line.
+
 ```sql
 select id from users order by id limit 10 offset :offset;
 ```
@@ -658,6 +740,8 @@ offset :offset;
 ### insert
 
 **The column list follows the [lists](#lists) rule, so it stays on the `insert into` line with three or fewer columns. `values` follows the [clause-items](#clause-items) rule: one row stays on the `values` line, and two or more rows are indented one per line. Each row follows the lists rule.** Test cases: `13-insert`, `25-long-lists`.
+
+**IntelliJ default:** Different: the column list and `values` row stay on one line regardless of length. Several rows are aligned under the first row with trailing commas. No space is added between the table name and its column list, as in `users(id, email)`.
 
 Three or fewer columns:
 
@@ -764,6 +848,8 @@ where deleted_at is not null;
 
 **`set` follows the clause-items rule: one assignment stays on the `set` line, and several assignments are indented one per line.** Test case: `14-update`.
 
+**IntelliJ default:** Different: assignments keep their original spacing, so `email=:email` stays unspaced. Several assignments are aligned under the first with trailing commas.
+
 ```sql
 UPDATE users SET email=:email WHERE id=:id;
 ```
@@ -796,6 +882,8 @@ where id = :id;
 
 **`using`, `where`, and `returning` each start a line.** Test case: `15-delete`.
 
+**IntelliJ default:** Different: `delete` is placed alone on its line, and `from` and `using` share the next line.
+
 ```sql
 delete from sessions s using users u where u.id = s.user_id;
 ```
@@ -813,6 +901,8 @@ where u.id = s.user_id;
 ### upsert
 
 **`on conflict` starts a line. For `do update`, the `set` clause follows on the next line.** Test case: `16-upsert`.
+
+**IntelliJ default:** Different: the `do update set` assignments stay on the `on conflict` line, aligned on `=`.
 
 ```sql
 insert into user_settings (user_id, key, value) values (:user_id, :key, :value) on conflict (user_id, key) do update set value = excluded.value, updated_at = now();
@@ -835,6 +925,8 @@ set
 
 **The opening parenthesis ends the first line. Each column and table constraint is on its own indented line with leading commas. Columns are not aligned into a grid.** Test case: `17-create-table`.
 
+**IntelliJ default:** Different: the opening parenthesis is on its own line, columns are indented four spaces, and column names, types, and constraints are aligned into a grid with trailing commas.
+
 ```sql
 CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, CONSTRAINT users_email_check CHECK (email <> ''));
 ```
@@ -854,6 +946,8 @@ create table if not exists users (
 ### alter-table
 
 **One action stays on the `alter table` line. Several actions are indented one per line with leading commas.** Test case: `19-alter-and-index`.
+
+**IntelliJ default:** Different: every action, including a single one, moves to its own line indented four spaces, with trailing commas and column definitions aligned into a grid.
 
 ```sql
 alter table users drop column legacy_flag;
@@ -920,6 +1014,8 @@ alter table users
 
 **An index without a `where` clause stays on one line. A partial index places `on` and `where` on indented lines below the index name.** Test case: `19-alter-and-index`.
 
+**IntelliJ default:** Not handled: index statements are left as written, including `using btree` and line breaks.
+
 ```sql
 create index orders_user_id_idx on orders (user_id);
 ```
@@ -969,6 +1065,8 @@ create unique index concurrently if not exists users_email_idx
 ### function-definitions
 
 **The function signature is on the first line, and its parameters follow the [lists](#lists) rule. `returns` and each option are indented one level on the lines below it. `as` and the body come last, starting at column 0, so the closing delimiter lines up with `as`.** Options written after the body are moved before it; PostgreSQL does not depend on their order. Test cases: `23-function-body-passthrough`, `26-function-bodies`.
+
+**IntelliJ default:** Different: `returns` stays on the signature line, the remaining options and `as` are indented four spaces on the next line, and the body opens on its own line. A `sql` body is formatted with the SQL rules. A `plpgsql` body is re-indented by four spaces and a statement after `then` moves to its own line, but embedded statements are not reformatted. Case is left as written, parameters stay on one line, and options after the body stay there.
 
 The body is a string to the PostgreSQL parser, so pgfmt formats it separately, by language:
 
@@ -1148,6 +1246,8 @@ $$;
 
 **Statements are separated by exactly one blank line.** Statements on the same line are split apart, and runs of blank lines are reduced to one. Test case: `20-multiple-statements`.
 
+**IntelliJ default:** Different: statements on one line are split onto separate lines without a blank line between them, and existing runs of blank lines are kept.
+
 ```sql
 select 1;select 2;
 
@@ -1171,6 +1271,8 @@ select 3;
 
 **There is no line length limit.** Lines break only where the rules above place a break, so the same query always formats the same way regardless of editor width.
 
+**IntelliJ default:** Different: lines are wrapped at a right margin of 120 columns, so the same query can format differently depending on its length.
+
 ---
 
 ## Normalization
@@ -1180,6 +1282,8 @@ The PostgreSQL parser does not record certain spelling choices, so pgfmt prints 
 ### aliases
 
 🔒 **Table and column aliases always use `as`.** Test case: `01-select-basic`.
+
+**IntelliJ default:** Not handled: aliases are left as written, with or without `as`.
 
 ```sql
 select u.id user_id from users u;
@@ -1198,6 +1302,8 @@ from users as u;
 
 🔒 **`cast(x as t)` is printed as `x::t`. A string literal cast to `interval` is printed as `interval '...'`.** Test case: `11-functions-and-casts`.
 
+**IntelliJ default:** Not handled: `cast(x as t)` and `::` are left as written.
+
 ```sql
 select CAST(created_at AS DATE), '1 day'::interval;
 ```
@@ -1215,6 +1321,8 @@ select
 ### operators
 
 🔒 **Binary operators have exactly one space on each side, however they were written. `!=` is printed as `<>`.** Unary minus has no space. Test case: `22-operators-and-literals`.
+
+**IntelliJ default:** Different: spaces are added around most binary operators, the same as pgfmt, but `!=` is kept, and assignments in `set` are left unspaced.
 
 No spaces in the input:
 
@@ -1258,6 +1366,8 @@ where a = b;
 
 🔒 **`inner join` is printed as `join`, and `left outer join` as `left join`.** A join with no condition is printed as `cross join`. Test case: `03-joins`.
 
+**IntelliJ default:** Not handled: `inner join` and `left outer join` are left as written.
+
 ```sql
 select 1 from a inner join b on b.id = a.id left outer join c on c.id = a.id;
 ```
@@ -1278,6 +1388,8 @@ left join c
 ### type-names
 
 🔒 **Built-in types use one spelling:** `integer`, `bigint`, `smallint`, `boolean`, `real`, `double precision`, `numeric`, `varchar`, `char`, `timestamptz`, `timetz`. Test case: `18-type-names`.
+
+**IntelliJ default:** Not handled: type spellings such as `INT4` and `TIMESTAMP WITH TIME ZONE` are left as written.
 
 ```sql
 create table t (a INT4, b BOOL, c TIMESTAMP WITH TIME ZONE, d FLOAT8, e DECIMAL(10,2));
@@ -1301,6 +1413,8 @@ create table t (
 
 🔒 **Parentheses are printed only where operator precedence requires them, with one exception: nested `and`/`or` groups are always parenthesized for readability.** The parser discards parentheses, so pgfmt reconstructs them from precedence.
 
+**IntelliJ default:** Not handled: redundant parentheses are kept and none are added.
+
 ```sql
 select (a + b) * c, a - (b - c), (a * b) + c, a or b and c;
 ```
@@ -1320,6 +1434,8 @@ select
 ### quoting
 
 🔒 **Identifiers are quoted only when required:** when they contain uppercase or special characters, or when they are reserved words in that position. After `as`, any keyword is allowed without quotes.
+
+**IntelliJ default:** Not handled: quotes are left as written, including unnecessary ones such as `"order"`.
 
 ```sql
 select "user".id, 1 as "order" from "user";
@@ -1341,6 +1457,8 @@ from "user";
 ### comments
 
 **Comments are kept next to the code they were written beside.** A comment on its own line stays on its own line before the same item. A comment at the end of a line stays at the end of that item's line. Test case: `10-comments`.
+
+**IntelliJ default:** Same: comments stay beside the code they were written next to.
 
 ```sql
 -- leading comment for the query
@@ -1369,6 +1487,8 @@ where active = true; -- trailing
 
 **`:name` placeholders are kept, including kebab-case names.** A colon inside array brackets, a `::` cast, a string, or a comment is not a placeholder. Subtraction from a placeholder needs spaces: `:limit - 1`. Test case: `09-placeholders`.
 
+**IntelliJ default:** Different: plain `:name` placeholders are kept, but kebab-case placeholders are split into a subtraction: `:user-id` becomes `:user - id`, which changes the query.
+
 ```sql
 select :user-id, :address-2 from users where id = :id::bigint and tags[1:2] = :tags and note <> 'time: 10:30';
 ```
@@ -1392,6 +1512,8 @@ where
 
 **String and number literals are printed exactly as written.** This includes `E'...'` strings, dollar-quoted strings, and multi-line strings, whose contents are never re-indented.
 
+**IntelliJ default:** Same: literals are kept as written.
+
 ```sql
 SELECT E'a\nb', $tag$raw$tag$, 1.50;
 ```
@@ -1411,6 +1533,8 @@ select
 
 **A statement's semicolon is kept if present and not added if absent.** Some SQL loaders expect statements without a trailing semicolon.
 
+**IntelliJ default:** Same: a missing semicolon is not added.
+
 ```sql
 SELECT id FROM users
 ```
@@ -1427,6 +1551,8 @@ from users
 ### unsupported-statements
 
 **A statement that uses syntax pgfmt does not lay out is cleaned up but keeps its structure, and pgfmt reports it on stderr.** Keywords and unquoted identifiers are lowercased, runs of spaces become one space, spaces before commas and semicolons are removed, and line breaks are kept. Strings, comments, and placeholders are kept as written. If the cleaned text would parse differently, the statement is left exactly as written. Other statements in the file are formatted normally.
+
+**IntelliJ default:** Different: the IntelliJ formatter has no unsupported statements. For this example it collapses runs of spaces and removes the space before the semicolon, but keeps the case and the space before the comma.
 
 ```sql
 SELECT a FROM t;

@@ -64,7 +64,9 @@ Each editor runs pgfmt on the buffer through stdin and replaces the buffer with 
 
 ### VS Code
 
-Install the Custom Local Formatters extension (`jkillian.custom-local-formatters`), then add to `settings.json`:
+A dedicated pgfmt extension is planned under `editors/vscode`. Until it is published, pgfmt runs through [Custom Local Formatters](https://marketplace.visualstudio.com/items?itemName=jkillian.custom-local-formatters) (`jkillian.custom-local-formatters`), a third-party extension that registers any command-line program as a VS Code formatter. It sends the document to the command's stdin and replaces the document with the command's stdout, which is how pgfmt already works.
+
+Install the extension, then add to `settings.json`:
 
 ```json
 {
@@ -77,6 +79,8 @@ Install the Custom Local Formatters extension (`jkillian.custom-local-formatters
   }
 }
 ```
+
+When the pgfmt extension is published, it replaces this setup.
 
 ### Neovim
 
@@ -138,3 +142,5 @@ go test ./...
 Editor plugins run whichever `pgfmt` is on the path, so `./bin/link` is how a local change is tested in an editor.
 
 Each directory in `testdata/cases` contains an `input.sql` and the `expected.sql` it must format to. The tests also check that formatting `expected.sql` leaves it unchanged and that no comments are lost.
+
+`rules.md` is generated. Edit `docs/rules.template.md`, which contains each rule and its input examples, then run `go run ./tools/rules` to write `rules.md` with the formatter's output below every example. `go test ./...` fails if `rules.md` is out of date.
