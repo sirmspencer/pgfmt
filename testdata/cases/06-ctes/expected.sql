@@ -2,8 +2,8 @@ with active as (
   select id
   from users
   where active
-)
-, totals as (
+),
+totals as (
   select user_id, sum(total) as total
   from orders
   group by user_id

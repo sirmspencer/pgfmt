@@ -23,8 +23,8 @@ from (
 where t.total > 1000;
 
 select
-  id
-  , (
+  id,
+  (
     select count(*)
     from orders as o
     where o.user_id = u.id

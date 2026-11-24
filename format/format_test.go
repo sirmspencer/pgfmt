@@ -217,7 +217,7 @@ func TestRestrictedSyntax(t *testing.T) {
 		{"select (comp).a, (t.comp).b from t", "select (comp).a, (t.comp).b\nfrom t\n"},
 		{`select "coalesce"(1), "extract"('a', b)`, "select \"coalesce\"(1), \"extract\"('a', b)\n"},
 		{"create table t (a timestamp default (now() at time zone 'utc'), b int default -1)",
-			"create table t (\n  a timestamp default (now() at time zone 'utc')\n  , b integer default -1\n)\n"},
+			"create table t (\n  a timestamp default (now() at time zone 'utc'),\n  b integer   default -1\n)\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
@@ -357,9 +357,9 @@ func TestPlaceholderErrorMessage(t *testing.T) {
 func TestSelectList(t *testing.T) {
 	tests := []struct{ name, input, want string }{
 		{"three items stay inline", "select id, name, email from users", "select id, name, email\nfrom users\n"},
-		{"four items break", "select id, name, email, phone from users", "select\n  id\n  , name\n  , email\n  , phone\nfrom users\n"},
-		{"a multi-line item breaks", "select id, case when a then 1 end as b from t", "select\n  id\n  , case\n    when a then 1\n  end as b\nfrom t\n"},
-		{"a comment between items breaks", "select id, -- key\n name from t", "select\n  id -- key\n  , name\nfrom t\n"},
+		{"four items break", "select id, name, email, phone from users", "select\n  id,\n  name,\n  email,\n  phone\nfrom users\n"},
+		{"a multi-line item breaks", "select id, case when a then 1 end as b from t", "select\n  id,\n  case\n    when a then 1\n  end as b\nfrom t\n"},
+		{"a comment between items breaks", "select id, -- key\n name from t", "select\n  id, -- key\n  name\nfrom t\n"},
 		{"a comment after the last item stays inline", "select id, name -- names\nfrom t", "select id, name -- names\nfrom t\n"},
 		{"distinct", "select distinct a, b from t", "select distinct a, b\nfrom t\n"},
 	}
@@ -372,11 +372,11 @@ func TestSelectList(t *testing.T) {
 
 func TestOtherListsFollowTheListsRule(t *testing.T) {
 	tests := []struct{ name, input, want string }{
-		{"index columns", "create index i on t (a, b, c, d)", "create index i on t (\n  a\n  , b\n  , c\n  , d\n)\n"},
+		{"index columns", "create index i on t (a, b, c, d)", "create index i on t (\n  a,\n  b,\n  c,\n  d\n)\n"},
 		{"short index columns", "create index i on t (a, b, c)", "create index i on t (a, b, c)\n"},
-		{"join using", "select 1 from a inner join b using (w, x, y, z)", "select 1\nfrom a\ninner join b\n  using (\n    w\n    , x\n    , y\n    , z\n  )\n"},
-		{"conflict target", "insert into t (a) values (1) on conflict (a, b, c, d) do nothing", "insert into t (a)\nvalues (1)\non conflict (\n  a\n  , b\n  , c\n  , d\n) do nothing\n"},
-		{"drop", "drop table a, b, c, d", "drop table\n  a\n  , b\n  , c\n  , d\n"},
+		{"join using", "select 1 from a inner join b using (w, x, y, z)", "select 1\nfrom a\ninner join b\n  using (\n    w,\n    x,\n    y,\n    z\n  )\n"},
+		{"conflict target", "insert into t (a) values (1) on conflict (a, b, c, d) do nothing", "insert into t (a)\nvalues (1)\non conflict (\n  a,\n  b,\n  c,\n  d\n) do nothing\n"},
+		{"drop", "drop table a, b, c, d", "drop table\n  a,\n  b,\n  c,\n  d\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

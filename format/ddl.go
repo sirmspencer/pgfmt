@@ -33,36 +33,43 @@ func (p *printer) createStmt(stmt *pg.CreateStmt) string {
 	if len(stmt.TableElts) == 0 {
 		return head + " ()"
 	}
-	elements := make([]string, len(stmt.TableElts))
+	rows := make([][]string, len(stmt.TableElts))
 	for index, node := range stmt.TableElts {
 		switch {
 		case node.GetColumnDef() != nil:
-			elements[index] = p.columnDef(node.GetColumnDef())
+			rows[index] = p.columnCells(node.GetColumnDef())
 		case node.GetConstraint() != nil:
-			elements[index] = mark(node.GetConstraint().Location) + p.constraint(node.GetConstraint())
+			rows[index] = []string{mark(node.GetConstraint().Location) + p.constraint(node.GetConstraint())}
 		default:
 			fail("table element %T", node.Node)
 		}
 	}
-	return head + " (\n" + indent(joinLeading(elements)) + "\n)"
+	return head + " (\n" + indent(alignedItems(rows)) + "\n)"
 }
 
 func (p *printer) columnDef(col *pg.ColumnDef) string {
+	return joinCells(p.columnCells(col))
+}
+
+// columnCells splits a column definition into name, type, and the rest, the
+// three columns that create table aligns
+func (p *printer) columnCells(col *pg.ColumnDef) []string {
 	if col.Compression != "" || col.Storage != "" || col.StorageName != "" || len(col.Fdwoptions) > 0 ||
 		col.RawDefault != nil || col.Identity != "" || col.Generated != "" {
 		fail("column option")
 	}
-	text := mark(col.Location) + ident(col.Colname)
+	typ := ""
 	if col.TypeName != nil {
-		text += " " + p.typeName(col.TypeName)
+		typ = p.typeName(col.TypeName)
 	}
+	var rest []string
 	if col.CollClause != nil {
-		text += " collate " + qualifiedName(col.CollClause.Collname, ident)
+		rest = append(rest, "collate "+qualifiedName(col.CollClause.Collname, ident))
 	}
 	for _, node := range col.Constraints {
-		text += " " + p.constraint(node.GetConstraint())
+		rest = append(rest, p.constraint(node.GetConstraint()))
 	}
-	return text
+	return []string{mark(col.Location) + ident(col.Colname), typ, strings.Join(rest, " ")}
 }
 
 var fkActions = map[string]string{
@@ -178,14 +185,25 @@ func (p *printer) alterTableStmt(stmt *pg.AlterTableStmt) string {
 		head += "if exists "
 	}
 	head = mark(stmt.Relation.Location) + head + p.rangeVar(stmt.Relation)
-	cmds := make([]string, len(stmt.Cmds))
+	rows := make([][]string, len(stmt.Cmds))
 	for index, node := range stmt.Cmds {
-		cmds[index] = p.alterTableCmd(node.GetAlterTableCmd())
+		cmd := node.GetAlterTableCmd()
+		if cmd.Subtype == pg.AlterTableType_AT_AddColumn {
+			// the add column prefix joins the name cell so added columns align
+			cells := p.columnCells(cmd.Def.GetColumnDef())
+			prefix := "add column "
+			if cmd.MissingOk {
+				prefix += "if not exists "
+			}
+			rows[index] = append([]string{prefix + cells[0]}, cells[1:]...)
+			continue
+		}
+		rows[index] = []string{p.alterTableCmd(cmd)}
 	}
-	if len(cmds) == 1 {
-		return head + " " + cmds[0]
+	if len(rows) == 1 {
+		return head + " " + joinCells(rows[0])
 	}
-	return head + "\n" + indent(joinLeading(cmds))
+	return head + "\n" + indent(alignedItems(rows))
 }
 
 func (p *printer) alterTableCmd(cmd *pg.AlterTableCmd) string {
@@ -524,7 +542,7 @@ func (p *printer) dropStmt(stmt *pg.DropStmt) string {
 		}
 	}
 	if len(names) > maxInlineItems {
-		return text + "\n" + indent(joinLeading(names)) + behavior(stmt.Behavior)
+		return text + "\n" + indent(joinItems(names)) + behavior(stmt.Behavior)
 	}
 	return text + " " + strings.Join(names, ", ") + behavior(stmt.Behavior)
 }

@@ -8,7 +8,7 @@ This document lists the formatting rules pgfmt applies. Each rule shows input an
 
 Each rule below was compared with the default SQL code style of the JetBrains SQL formatter, which IntelliJ IDEA Ultimate and DataGrip share. The comparison used DataGrip 2025.1 with an empty code style, run through its command-line formatter on the examples in this document.
 
-3 same · 27 different · 12 not handled by IntelliJ
+4 same · 26 different · 12 not handled by IntelliJ
 
 | Rule | IntelliJ default |
 |---|---|
@@ -17,7 +17,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 | [function-and-type-case](#function-and-type-case) | Not handled |
 | [literal-case](#literal-case) | Not handled |
 | [indentation](#indentation) | Different |
-| [leading-commas](#leading-commas) | Different |
+| [commas](#commas) | Same |
 | [column-lists](#column-lists) | Different |
 | [clause-items](#clause-items) | Different |
 | [conditions](#conditions) | Different |
@@ -67,7 +67,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 **Layout**
 
 - [indentation](#indentation)
-- [leading-commas](#leading-commas)
+- [commas](#commas)
 - [column-lists](#column-lists)
 - [clause-items](#clause-items)
 - [conditions](#conditions)
@@ -205,11 +205,11 @@ select null, true, false;
 
 ---
 
-### leading-commas
+### commas
 
-**When a list is split across lines, each line after the first starts with a comma.** This applies to every multi-line list: select items, `group by`, `order by`, `set`, `returning`, CTEs, long parenthesized lists, table columns, and `alter table` actions. Lists that stay on one line use ordinary `, ` separators. Test case: `01-select-basic`.
+**When a list is split across lines, each item except the last ends with a comma.** This applies to every multi-line list: select items, `group by`, `order by`, `set`, `returning`, CTEs, long parenthesized lists, table columns, and `alter table` actions. Lists that stay on one line use ordinary `, ` separators. A comment at the end of an item's line follows its comma. Test cases: `01-select-basic`, `10-comments`.
 
-**IntelliJ default:** Different: commas trail the item when a list is split across lines.
+**IntelliJ default:** Same: commas trail the item when a list is split across lines.
 
 ```sql
 select id, email, created_at, updated_at from users;
@@ -219,10 +219,10 @@ select id, email, created_at, updated_at from users;
 
 ```sql
 select
-  id
-  , email
-  , created_at
-  , updated_at
+  id,
+  email,
+  created_at,
+  updated_at
 from users;
 ```
 
@@ -259,22 +259,22 @@ select region, account_id, status, day, count(*) from orders group by region, ac
 
 ```sql
 select
-  region
-  , account_id
-  , status
-  , day
-  , count(*)
+  region,
+  account_id,
+  status,
+  day,
+  count(*)
 from orders
 group by
-  region
-  , account_id
-  , status
-  , day
+  region,
+  account_id,
+  status,
+  day
 order by
-  region
-  , account_id
-  , status
-  , day;
+  region,
+  account_id,
+  status,
+  day;
 ```
 
 `returning` with three and four items:
@@ -302,10 +302,10 @@ update users
 set email = :email
 where id = :id
 returning
-  id
-  , email
-  , updated_at
-  , version;
+  id,
+  email,
+  updated_at,
+  version;
 ```
 
 A multi-line item:
@@ -318,8 +318,8 @@ select id, case when status = 'a' then 'active' else 'other' end as label from u
 
 ```sql
 select
-  id
-  , case
+  id,
+  case
     when status = 'a' then 'active'
     else 'other'
   end as label
@@ -337,8 +337,8 @@ select id, -- primary key
 
 ```sql
 select
-  id -- primary key
-  , name
+  id, -- primary key
+  name
 from users;
 ```
 
@@ -389,11 +389,11 @@ update users set email = :email, updated_at = now() from accounts, regions where
 ```sql
 update users
 set
-  email = :email
-  , updated_at = now()
+  email      = :email,
+  updated_at = now()
 from
-  accounts
-  , regions
+  accounts,
+  regions
 where accounts.id = users.account_id;
 ```
 
@@ -419,8 +419,8 @@ insert into tags (name) values ('a'), ('b');
 ```sql
 insert into tags (name)
 values
-  ('a')
-  , ('b');
+  ('a'),
+  ('b');
 ```
 
 ---
@@ -615,8 +615,8 @@ select id, (select count(*) from orders o where o.user_id = u.id) as order_count
 
 ```sql
 select
-  id
-  , (
+  id,
+  (
     select count(*)
     from orders as o
     where o.user_id = u.id
@@ -628,7 +628,7 @@ from users as u;
 
 ### lists
 
-**A parenthesized list with three or fewer items stays on one line. A list with four or more items keeps the opening parenthesis on its line, places each item on its own indented line with leading commas, and puts the closing parenthesis on its own line.** This covers function arguments and parameters, `in (...)` value lists, `coalesce`, `greatest`, `least`, `array[...]`, row values, `insert` column lists, `values` rows, index columns and `include` lists, constraint key lists, join `using` lists, `on conflict` targets, alias and CTE column names, `distinct on`, and the names in a `drop` statement. Aggregate calls with `distinct` or `order by` inside the parentheses stay on one line, as do window specifications in `over (...)` and type modifiers such as `numeric(10, 2)`. Test case: `25-long-lists`.
+**A parenthesized list with three or fewer items stays on one line. A list with four or more items keeps the opening parenthesis on its line, places each item on its own indented line with trailing commas, and puts the closing parenthesis on its own line.** This covers function arguments and parameters, `in (...)` value lists, `coalesce`, `greatest`, `least`, `array[...]`, row values, `insert` column lists, `values` rows, index columns and `include` lists, constraint key lists, join `using` lists, `on conflict` targets, alias and CTE column names, `distinct on`, and the names in a `drop` statement. Aggregate calls with `distinct` or `order by` inside the parentheses stay on one line, as do window specifications in `over (...)` and type modifiers such as `numeric(10, 2)`. Test case: `25-long-lists`.
 
 **IntelliJ default:** Different: lists of three or fewer items behave the same. Longer lists stay on one line and are split only when they pass the right margin. A space is added after `array`, as in `array [u.a, u.b]`.
 
@@ -656,10 +656,10 @@ select id from users where id in (1, 2, 3, 4);
 select id
 from users
 where id in (
-  1
-  , 2
-  , 3
-  , 4
+  1,
+  2,
+  3,
+  4
 );
 ```
 
@@ -688,12 +688,12 @@ select id from users where created_at > make_timestamp(:year, :month, :day, 0, 0
 select id
 from users
 where created_at > make_timestamp(
-  :year
-  , :month
-  , :day
-  , 0
-  , 0
-  , 0
+  :year,
+  :month,
+  :day,
+  0,
+  0,
+  0
 );
 ```
 
@@ -707,10 +707,10 @@ select jsonb_build_object('id', u.id, 'name', u.name) from users u;
 
 ```sql
 select jsonb_build_object(
-  'id'
-  , u.id
-  , 'name'
-  , u.name
+  'id',
+  u.id,
+  'name',
+  u.name
 )
 from users as u;
 ```
@@ -725,14 +725,14 @@ select jsonb_build_object('id', u.id, 'tags', array[u.a, u.b, u.c, u.d]) from us
 
 ```sql
 select jsonb_build_object(
-  'id'
-  , u.id
-  , 'tags'
-  , array[
-    u.a
-    , u.b
-    , u.c
-    , u.d
+  'id',
+  u.id,
+  'tags',
+  array[
+    u.a,
+    u.b,
+    u.c,
+    u.d
   ]
 )
 from users as u;
@@ -748,10 +748,10 @@ create index events_lookup_idx on events (account_id, kind, status, created_at);
 
 ```sql
 create index events_lookup_idx on events (
-  account_id
-  , kind
-  , status
-  , created_at
+  account_id,
+  kind,
+  status,
+  created_at
 );
 ```
 
@@ -763,15 +763,15 @@ alter table events add constraint events_account_fk foreign key (account_id, reg
 
 ```sql
 alter table events add constraint events_account_fk foreign key (
-  account_id
-  , region
-  , shard
-  , kind
+  account_id,
+  region,
+  shard,
+  kind
 ) references accounts (
-  id
-  , region
-  , shard
-  , kind
+  id,
+  region,
+  shard,
+  kind
 );
 ```
 
@@ -785,12 +785,12 @@ select coalesce(a, b, c), coalesce(a, b, c, d) from t;
 
 ```sql
 select
-  coalesce(a, b, c)
-  , coalesce(
-    a
-    , b
-    , c
-    , d
+  coalesce(a, b, c),
+  coalesce(
+    a,
+    b,
+    c,
+    d
   )
 from t;
 ```
@@ -799,9 +799,9 @@ from t;
 
 ### ctes
 
-**Each common table expression opens with `name as (`, indents its body, and closes with `)` at the start of a line. Each later CTE starts its line with a comma.** Test case: `06-ctes`.
+**Each common table expression opens with `name as (`, indents its body, and closes with `)` at the start of a line. A comma follows each CTE's closing parenthesis, and the next CTE starts on the following line.** Test case: `06-ctes`.
 
-**IntelliJ default:** Different: each CTE body stays on one line, later CTEs are aligned under the first, and commas trail.
+**IntelliJ default:** Different: each CTE body stays on one line, and later CTEs are aligned under the first.
 
 ```sql
 with active as (select id from users where active), totals as (select user_id from orders) select a.id from active a;
@@ -814,8 +814,8 @@ with active as (
   select id
   from users
   where active
-)
-, totals as (
+),
+totals as (
   select user_id
   from orders
 )
@@ -855,8 +855,8 @@ select id, case role when 'admin' then 1 else 0 end as is_admin from users;
 
 ```sql
 select
-  id
-  , case role
+  id,
+  case role
     when 'admin' then 1
     else 0
   end as is_admin
@@ -942,8 +942,8 @@ insert into tags (name) values ('a'), ('b');
 ```sql
 insert into tags (name)
 values
-  ('a')
-  , ('b');
+  ('a'),
+  ('b');
 ```
 
 Four or more columns:
@@ -956,16 +956,16 @@ insert into events (id, user_id, kind, created_at) values (:id, :user_id, :kind,
 
 ```sql
 insert into events (
-  id
-  , user_id
-  , kind
-  , created_at
+  id,
+  user_id,
+  kind,
+  created_at
 )
 values (
-  :id
-  , :user_id
-  , :kind
-  , now()
+  :id,
+  :user_id,
+  :kind,
+  now()
 );
 ```
 
@@ -979,23 +979,23 @@ insert into events (id, user_id, kind, created_at) values (:id, :user_id, :kind,
 
 ```sql
 insert into events (
-  id
-  , user_id
-  , kind
-  , created_at
+  id,
+  user_id,
+  kind,
+  created_at
 )
 values
   (
-    :id
-    , :user_id
-    , :kind
-    , now()
-  )
-  , (
-    :id2
-    , :user_id2
-    , :kind2
-    , now()
+    :id,
+    :user_id,
+    :kind,
+    now()
+  ),
+  (
+    :id2,
+    :user_id2,
+    :kind2,
+    now()
   );
 ```
 
@@ -1018,7 +1018,7 @@ where deleted_at is not null;
 
 ### update
 
-**`set` follows the clause-items rule: one assignment stays on the `set` line, and several assignments are indented one per line.** Test case: `14-update`.
+**`set` follows the clause-items rule: one assignment stays on the `set` line, and several assignments are indented one per line and aligned on `=`.** Test case: `14-update`.
 
 **IntelliJ default:** Different: assignments keep their original spacing, so `email=:email` stays unspaced. Several assignments are aligned under the first with trailing commas.
 
@@ -1043,8 +1043,8 @@ UPDATE users SET email=:email, updated_at=now() WHERE id=:id;
 ```sql
 update users
 set
-  email = :email
-  , updated_at = now()
+  email      = :email,
+  updated_at = now()
 where id = :id;
 ```
 
@@ -1074,7 +1074,7 @@ where u.id = s.user_id;
 
 **`on conflict` starts a line. For `do update`, the `set` clause follows on the next line.** Test case: `16-upsert`.
 
-**IntelliJ default:** Different: the `do update set` assignments stay on the `on conflict` line, aligned on `=`.
+**IntelliJ default:** Different: the `do update set` assignments stay on the `on conflict` line. They are aligned on `=` in both.
 
 ```sql
 insert into user_settings (user_id, key, value) values (:user_id, :key, :value) on conflict (user_id, key) do update set value = excluded.value, updated_at = now();
@@ -1087,17 +1087,17 @@ insert into user_settings (user_id, key, value)
 values (:user_id, :key, :value)
 on conflict (user_id, key) do update
 set
-  value = excluded.value
-  , updated_at = now();
+  value      = excluded.value,
+  updated_at = now();
 ```
 
 ---
 
 ### create-table
 
-**The opening parenthesis ends the first line. Each column and table constraint is on its own indented line with leading commas. Columns are not aligned into a grid.** Test case: `17-create-table`.
+**The opening parenthesis ends the first line. Each column and table constraint is on its own indented line with trailing commas, and columns are aligned as described in [alignment](#alignment).** Test case: `17-create-table`.
 
-**IntelliJ default:** Different: the opening parenthesis is on its own line, columns are indented four spaces, and column names, types, and constraints are aligned into a grid with trailing commas.
+**IntelliJ default:** Different: the opening parenthesis is on its own line and columns are indented four spaces. Both align names, types, and constraints into a grid with trailing commas.
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, CONSTRAINT users_email_check CHECK (email <> ''));
@@ -1107,9 +1107,9 @@ CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL 
 
 ```sql
 create table if not exists users (
-  id bigserial primary key
-  , email text not null unique
-  , constraint users_email_check check (email <> '')
+  id    bigserial primary key,
+  email text      not null unique,
+  constraint users_email_check check (email <> '')
 );
 ```
 
@@ -1117,9 +1117,9 @@ create table if not exists users (
 
 ### alter-table
 
-**One action stays on the `alter table` line. Several actions are indented one per line with leading commas.** Test case: `19-alter-and-index`.
+**One action stays on the `alter table` line. Several actions are indented one per line with trailing commas.** Test case: `19-alter-and-index`.
 
-**IntelliJ default:** Different: every action, including a single one, moves to its own line indented four spaces, with trailing commas and column definitions aligned into a grid.
+**IntelliJ default:** Different: every action, including a single one, moves to its own line indented four spaces. Both use trailing commas and align added column definitions into a grid.
 
 ```sql
 alter table users drop column legacy_flag;
@@ -1139,8 +1139,8 @@ ALTER TABLE users ADD COLUMN last_login TIMESTAMPTZ, ADD COLUMN login_count INTE
 
 ```sql
 alter table users
-  add column last_login timestamptz
-  , add column login_count integer not null default 0;
+  add column last_login  timestamptz,
+  add column login_count integer not null default 0;
 ```
 
 Other single actions:
@@ -1175,9 +1175,9 @@ alter table users drop column legacy_flag, alter column email type varchar(320),
 
 ```sql
 alter table users
-  drop column legacy_flag
-  , alter column email type varchar(320)
-  , alter column active set default true;
+  drop column legacy_flag,
+  alter column email type varchar(320),
+  alter column active set default true;
 ```
 
 ---
@@ -1310,8 +1310,8 @@ as $$
       and i.status <> 'void';
     update orders
     set
-      status = 'closed'
-      , closed_at = now()
+      status    = 'closed',
+      closed_at = now()
     where id = order_id;
     if exists (select 1 from refunds r where r.order_id = order_id) then
       delete from refunds
@@ -1337,10 +1337,10 @@ create function find_events(user_id bigint, kind text, since timestamptz, max_ro
 
 ```sql
 create function find_events(
-  user_id bigint
-  , kind text
-  , since timestamptz
-  , max_rows integer default 100
+  user_id bigint,
+  kind text,
+  since timestamptz,
+  max_rows integer default 100
 )
   returns setof events
   language sql
@@ -1449,14 +1449,68 @@ select 3;
 
 ### alignment
 
-**Nothing is aligned into columns.** Each line is indented by the indentation rule only, and one space separates a name from what follows it. Lining up `=` signs, types, or aliases would make the layout depend on the longest name in a group, and adding one longer name would change every other line in it, which makes diffs and merges noisier.
+**Four constructs are aligned into columns.** Elsewhere one space separates a name from what follows it.
 
-**IntelliJ default:** Different: `create table` columns and `alter table ... add column` definitions are aligned into a grid, `on conflict ... do update set` assignments are aligned on `=`, and aliases in a multi-line select list are aligned on `as`. Assignments in a plain `update ... set` are not aligned.
+- **`create table` columns:** column names, types, and constraints form a grid. Table constraints, such as `constraint ... check (...)`, are not part of the grid.
+- **`alter table` with several `add column` actions:** the added columns form the same grid.
+- **`set` in `update` and in `on conflict ... do update`:** assignments are aligned on `=`.
+- **Select lists split across lines:** aliases are aligned on `as`. Items without an alias, and items that span several lines such as `case` expressions, are not padded.
 
-Assignments in `set`:
+A cell is padded to the widest cell in its column among the lines that have another cell after it. Test cases: `11-functions-and-casts`, `14-update`, `16-upsert`, `17-create-table`, `19-alter-and-index`.
+
+**IntelliJ default:** Different: IntelliJ aligns the same constructs except a plain `update ... set`, whose assignments it leaves unaligned and unspaced.
+
+Columns in `create table`:
 
 ```sql
-update rate_limits set max_requests_per_minute = :max-requests-per-minute, burst = :burst, updated_at = now() where id = :id;
+create table rate_limits (id bigserial primary key, max_requests_per_minute integer not null, burst integer not null default 10, updated_at timestamptz not null default now(), constraint burst_positive check (burst > 0));
+```
+
+↓
+
+```sql
+create table rate_limits (
+  id                      bigserial   primary key,
+  max_requests_per_minute integer     not null,
+  burst                   integer     not null default 10,
+  updated_at              timestamptz not null default now(),
+  constraint burst_positive check (burst > 0)
+);
+```
+
+Added columns in `alter table`:
+
+```sql
+alter table rate_limits add column window_seconds integer not null default 60, add column note text;
+```
+
+↓
+
+```sql
+alter table rate_limits
+  add column window_seconds integer not null default 60,
+  add column note           text;
+```
+
+Assignments in an upsert, and in a plain update:
+
+```sql
+insert into rate_limits (id, burst) values (:id, :burst) on conflict (id) do update set max_requests_per_minute = :max-requests-per-minute, burst = excluded.burst;
+```
+
+↓
+
+```sql
+insert into rate_limits (id, burst)
+values (:id, :burst)
+on conflict (id) do update
+set
+  max_requests_per_minute = :max-requests-per-minute,
+  burst                   = excluded.burst;
+```
+
+```sql
+update rate_limits set max_requests_per_minute = :max-requests-per-minute, burst = :burst where id = :id;
 ```
 
 ↓
@@ -1464,40 +1518,27 @@ update rate_limits set max_requests_per_minute = :max-requests-per-minute, burst
 ```sql
 update rate_limits
 set
-  max_requests_per_minute = :max-requests-per-minute
-  , burst = :burst
-  , updated_at = now()
+  max_requests_per_minute = :max-requests-per-minute,
+  burst                   = :burst
 where id = :id;
-```
-
-Columns in `create table`:
-
-```sql
-create table rate_limits (id bigserial primary key, max_requests_per_minute integer not null, burst integer not null default 10, updated_at timestamptz not null default now());
-```
-
-↓
-
-```sql
-create table rate_limits (
-  id bigserial primary key
-  , max_requests_per_minute integer not null
-  , burst integer not null default 10
-  , updated_at timestamptz not null default now()
-);
 ```
 
 Aliases in a select list:
 
 ```sql
-select count(*) as calls, coalesce(sum(latency_ms), 0) as total_latency_ms, max(called_at) as last_call from calls;
+select count(*) as calls, coalesce(sum(latency_ms), 0) as total_latency_ms, max(called_at) as last_call, region from calls group by region;
 ```
 
 ↓
 
 ```sql
-select count(*) as calls, coalesce(sum(latency_ms), 0) as total_latency_ms, max(called_at) as last_call
-from calls;
+select
+  count(*)                     as calls,
+  coalesce(sum(latency_ms), 0) as total_latency_ms,
+  max(called_at)               as last_call,
+  region
+from calls
+group by region;
 ```
 
 ---
@@ -1559,12 +1600,12 @@ select a+b, a-b*c, a||b, x!=y, x>=y, -a from t where a=b and c<>d;
 
 ```sql
 select
-  a + b
-  , a - b * c
-  , a || b
-  , x <> y
-  , x >= y
-  , -a
+  a + b,
+  a - b * c,
+  a || b,
+  x <> y,
+  x >= y,
+  -a
 from t
 where
   a = b
@@ -1625,11 +1666,11 @@ create table t (a INT4, b BOOL, c TIMESTAMP WITH TIME ZONE, d FLOAT8, e DECIMAL(
 
 ```sql
 create table t (
-  a integer
-  , b boolean
-  , c timestamptz
-  , d double precision
-  , e numeric(10, 2)
+  a integer,
+  b boolean,
+  c timestamptz,
+  d double precision,
+  e numeric(10, 2)
 );
 ```
 
@@ -1649,10 +1690,10 @@ select (a + b) * c, a - (b - c), (a * b) + c, a or b and c;
 
 ```sql
 select
-  (a + b) * c
-  , a - (b - c)
-  , a * b + c
-  , a or (b and c);
+  (a + b) * c,
+  a - (b - c),
+  a * b + c,
+  a or (b and c);
 ```
 
 ---
@@ -1775,8 +1816,8 @@ where active = true; -- trailing
 ```sql
 -- leading comment for the query
 select
-  id -- primary key
-  , email /* contact */
+  id, -- primary key
+  email /* contact */
 from users
 -- only active users
 where active = true; -- trailing

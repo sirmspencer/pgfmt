@@ -9,10 +9,10 @@ as $$
 $$;
 
 create function find_events(
-  user_id bigint
-  , kind text
-  , since timestamptz
-  , max_rows integer default 100
+  user_id bigint,
+  kind text,
+  since timestamptz,
+  max_rows integer default 100
 )
   returns setof events
   language sql

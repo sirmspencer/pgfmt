@@ -1,8 +1,8 @@
 create function find_events(
-  user_id bigint
-  , kind text
-  , since timestamptz
-  , max_rows integer default 100
+  user_id bigint,
+  kind text,
+  since timestamptz,
+  max_rows integer default 100
 )
   returns setof events
   language sql
@@ -38,8 +38,8 @@ as $$
     end if;
     update orders
     set
-      status = 'closed'
-      , closed_at = now()
+      status    = 'closed',
+      closed_at = now()
     where id = order_id;
     if exists (select 1 from refunds r where r.order_id = order_id) then
       delete from refunds

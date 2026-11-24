@@ -4,9 +4,9 @@ returning id;
 
 insert into tags (name)
 values
-  ('a')
-  , ('b')
-  , ('c');
+  ('a'),
+  ('b'),
+  ('c');
 
 insert into archived_users (id, email)
 select id, email

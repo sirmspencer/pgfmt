@@ -92,7 +92,7 @@ func (p *printer) clause(keyword string, items []string) string {
 	if len(items) == 1 {
 		return keyword + " " + items[0]
 	}
-	return p.keywordMark(items[0]) + keyword + "\n" + indent(joinLeading(items))
+	return p.keywordMark(items[0]) + keyword + "\n" + indent(joinItems(items))
 }
 
 // keywordMark tags a keyword printed alone on its line with the position of
@@ -119,9 +119,9 @@ func (p *printer) keywordMark(first string) string {
 // maxInlineItems is the longest parenthesized list that stays on one line
 const maxInlineItems = 3
 
-// joinLeading puts each item on its own line, with a comma before every item after the first
-func joinLeading(items []string) string {
-	return strings.Join(items, "\n, ")
+// joinItems puts each item on its own line, with a comma after every item but the last
+func joinItems(items []string) string {
+	return strings.Join(items, ",\n")
 }
 
 // list prints a parenthesized list on one line when it has at most
@@ -131,7 +131,7 @@ func list(open string, items []string, close string) string {
 	if len(items) <= maxInlineItems {
 		return open + strings.Join(items, ", ") + close
 	}
-	return open + "\n" + indent(joinLeading(items)) + "\n" + close
+	return open + "\n" + indent(joinItems(items)) + "\n" + close
 }
 
 // conditionItems splits a top-level and/or into lines led by their connective
@@ -314,7 +314,11 @@ func (p *printer) selectList(stmt *pg.SelectStmt) string {
 	if len(stmt.TargetList) == 0 {
 		return keyword
 	}
-	return p.shortClause(keyword, stmt.TargetList, p.targets(stmt.TargetList))
+	if p.inlineItems(stmt.TargetList, p.targets(stmt.TargetList)) {
+		return keyword + " " + strings.Join(p.targets(stmt.TargetList), ", ")
+	}
+	// aliases line up when the list is split across lines
+	return p.alignedClause(keyword, p.targetCells(stmt.TargetList))
 }
 
 // shortClause prints select, group by, and order by: on the keyword's line
@@ -348,19 +352,30 @@ func (p *printer) inlineItems(nodes []*pg.Node, items []string) bool {
 }
 
 func (p *printer) targets(nodes []*pg.Node) []string {
-	items := make([]string, len(nodes))
+	rows := p.targetCells(nodes)
+	items := make([]string, len(rows))
+	for index, row := range rows {
+		items[index] = joinCells(row)
+	}
+	return items
+}
+
+// targetCells splits each target into its expression and its alias, the two
+// columns a multi-line select list aligns
+func (p *printer) targetCells(nodes []*pg.Node) [][]string {
+	rows := make([][]string, len(nodes))
 	for index, node := range nodes {
 		target := node.GetResTarget()
 		if len(target.Indirection) > 0 {
 			fail("target indirection")
 		}
-		text := p.expr(target.Val)
+		alias := ""
 		if target.Name != "" {
-			text += " as " + labelIdent(target.Name)
+			alias = "as " + labelIdent(target.Name)
 		}
-		items[index] = markNode(node) + text
+		rows[index] = []string{markNode(node) + p.expr(target.Val), alias}
 	}
-	return items
+	return rows
 }
 
 func (p *printer) markedExprs(nodes []*pg.Node) []string {
@@ -403,7 +418,7 @@ func (p *printer) with(with *pg.WithClause) string {
 		}
 		ctes[index] = text + p.subquery(cte.Ctequery)
 	}
-	return head + strings.Join(ctes, "\n, ")
+	return head + strings.Join(ctes, ",\n")
 }
 
 func (p *printer) locking(lock *pg.LockingClause) string {
@@ -546,6 +561,17 @@ func (p *printer) returning(nodes []*pg.Node) string {
 	return p.shortClause("returning", nodes, p.targets(nodes))
 }
 
+// setCells splits assignments into name and value so they align on =
+func (p *printer) setCells(nodes []*pg.Node) [][]string {
+	items := p.setItems(nodes)
+	rows := make([][]string, len(items))
+	for index, item := range items {
+		name, value, _ := strings.Cut(item, " = ")
+		rows[index] = []string{name, "= " + value}
+	}
+	return rows
+}
+
 func (p *printer) setItems(nodes []*pg.Node) []string {
 	items := make([]string, len(nodes))
 	for index, node := range nodes {
@@ -602,7 +628,7 @@ func (p *printer) insertStmt(stmt *pg.InsertStmt) string {
 		case pg.OnConflictAction_ONCONFLICT_NOTHING:
 			parts = append(parts, mark(conflict.Location)+text+" do nothing")
 		case pg.OnConflictAction_ONCONFLICT_UPDATE:
-			parts = append(parts, mark(conflict.Location)+text+" do update", p.clause("set", p.setItems(conflict.TargetList)))
+			parts = append(parts, mark(conflict.Location)+text+" do update", p.alignedClause("set", p.setCells(conflict.TargetList)))
 			if conflict.WhereClause != nil {
 				parts = append(parts, p.conditionClause("where", conflict.WhereClause))
 			}
@@ -622,7 +648,7 @@ func (p *printer) updateStmt(stmt *pg.UpdateStmt) string {
 		parts = append(parts, p.with(stmt.WithClause))
 	}
 	parts = append(parts, mark(stmt.Relation.Location)+"update "+p.rangeVar(stmt.Relation))
-	parts = append(parts, p.clause("set", p.setItems(stmt.TargetList)))
+	parts = append(parts, p.alignedClause("set", p.setCells(stmt.TargetList)))
 	if len(stmt.FromClause) > 0 {
 		parts = append(parts, p.clause("from", p.fromItems(stmt.FromClause)))
 	}

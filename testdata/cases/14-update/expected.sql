@@ -1,7 +1,7 @@
 update users
 set
-  email = :email
-  , updated_at = now()
+  email      = :email,
+  updated_at = now()
 where id = :id
 returning id, email;
 

@@ -1,8 +1,8 @@
 select
-  account_id
-  , created_at::date as day
-  , count(*) as orders
-  , count(*) filter (where status = 'void') as voided
+  account_id,
+  created_at::date                        as day,
+  count(*)                                as orders,
+  count(*) filter (where status = 'void') as voided
 from shop.orders
 where region = :region
 :filters

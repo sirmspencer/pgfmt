@@ -1,6 +1,6 @@
 alter table users
-  add column last_login timestamptz
-  , add column login_count integer not null default 0;
+  add column last_login  timestamptz,
+  add column login_count integer not null default 0;
 
 alter table users drop column legacy_flag;
 

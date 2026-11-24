@@ -1,8 +1,8 @@
 select
-  u.id
-  , o.id as order_id
-  , p.name
-  , a.label
+  u.id,
+  o.id as order_id,
+  p.name,
+  a.label
 from users as u
 inner join orders as o
   on o.user_id = u.id
