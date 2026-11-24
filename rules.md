@@ -4,8 +4,6 @@
 
 This document lists the formatting rules pgfmt applies. Each rule shows input and the output pgfmt produces, and names the test case in `testdata/cases` that enforces it. Every example in this file is checked against the formatter.
 
-✅ implemented · 🔒 required by the parser, not a style choice
-
 ## IntelliJ comparison
 
 Each rule below was compared with the default SQL code style of the JetBrains SQL formatter, which IntelliJ IDEA Ultimate and DataGrip share. The comparison used DataGrip 2025.1 with an empty code style, run through its command-line formatter on the examples in this document.
@@ -58,54 +56,54 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 
 **Case**
 
-- [keyword-case](#keyword-case) ✅
-- [identifier-case](#identifier-case) ✅
-- [function-and-type-case](#function-and-type-case) ✅
-- [literal-case](#literal-case) ✅
+- [keyword-case](#keyword-case)
+- [identifier-case](#identifier-case)
+- [function-and-type-case](#function-and-type-case)
+- [literal-case](#literal-case)
 
 **Layout**
 
-- [indentation](#indentation) ✅
-- [leading-commas](#leading-commas) ✅
-- [clause-items](#clause-items) ✅
-- [conditions](#conditions) ✅
-- [grouped-conditions](#grouped-conditions) ✅
-- [joins](#joins) ✅
-- [join-conditions](#join-conditions) ✅
-- [subqueries](#subqueries) ✅
-- [lists](#lists) ✅
-- [ctes](#ctes) ✅
-- [case-expressions](#case-expressions) ✅
-- [set-operations](#set-operations) ✅
-- [limit-and-offset](#limit-and-offset) ✅
-- [insert](#insert) ✅
-- [update](#update) ✅
-- [delete](#delete) ✅
-- [upsert](#upsert) ✅
-- [create-table](#create-table) ✅
-- [alter-table](#alter-table) ✅
-- [create-index](#create-index) ✅
-- [function-definitions](#function-definitions) ✅
-- [statement-separation](#statement-separation) ✅
-- [line-length](#line-length) ✅
+- [indentation](#indentation)
+- [leading-commas](#leading-commas)
+- [clause-items](#clause-items)
+- [conditions](#conditions)
+- [grouped-conditions](#grouped-conditions)
+- [joins](#joins)
+- [join-conditions](#join-conditions)
+- [subqueries](#subqueries)
+- [lists](#lists)
+- [ctes](#ctes)
+- [case-expressions](#case-expressions)
+- [set-operations](#set-operations)
+- [limit-and-offset](#limit-and-offset)
+- [insert](#insert)
+- [update](#update)
+- [delete](#delete)
+- [upsert](#upsert)
+- [create-table](#create-table)
+- [alter-table](#alter-table)
+- [create-index](#create-index)
+- [function-definitions](#function-definitions)
+- [statement-separation](#statement-separation)
+- [line-length](#line-length)
 
 **Normalization**
 
-- [aliases](#aliases) 🔒
-- [casts](#casts) 🔒
-- [operators](#operators) 🔒
-- [join-keywords](#join-keywords) 🔒
-- [type-names](#type-names) 🔒
-- [parentheses](#parentheses) 🔒
-- [quoting](#quoting) 🔒
+- [aliases](#aliases)
+- [casts](#casts)
+- [operators](#operators)
+- [join-keywords](#join-keywords)
+- [type-names](#type-names)
+- [parentheses](#parentheses)
+- [quoting](#quoting)
 
 **Preservation**
 
-- [comments](#comments) ✅
-- [placeholders](#placeholders) ✅
-- [literals](#literals) ✅
-- [semicolons](#semicolons) ✅
-- [unsupported-statements](#unsupported-statements) ✅
+- [comments](#comments)
+- [placeholders](#placeholders)
+- [literals](#literals)
+- [semicolons](#semicolons)
+- [unsupported-statements](#unsupported-statements)
 
 ---
 
@@ -1277,11 +1275,11 @@ select 3;
 
 ## Normalization
 
-The PostgreSQL parser does not record certain spelling choices, so pgfmt prints these constructs in one canonical form. Each output parses to the same syntax tree as its input.
+Each of these constructs has several equivalent spellings, and pgfmt always prints the same one. Each output parses to the same syntax tree as its input.
 
 ### aliases
 
-🔒 **Table and column aliases always use `as`.** Test case: `01-select-basic`.
+**Table and column aliases always use `as`.** Test case: `01-select-basic`.
 
 **IntelliJ default:** Not handled: aliases are left as written, with or without `as`.
 
@@ -1300,7 +1298,7 @@ from users as u;
 
 ### casts
 
-🔒 **`cast(x as t)` is printed as `x::t`. A string literal cast to `interval` is printed as `interval '...'`.** Test case: `11-functions-and-casts`.
+**`cast(x as t)` is printed as `x::t`. A string literal cast to `interval` is printed as `interval '...'`.** Test case: `11-functions-and-casts`.
 
 **IntelliJ default:** Not handled: `cast(x as t)` and `::` are left as written.
 
@@ -1320,7 +1318,7 @@ select
 
 ### operators
 
-🔒 **Binary operators have exactly one space on each side, however they were written. `!=` is printed as `<>`.** Unary minus has no space. Test case: `22-operators-and-literals`.
+**Binary operators have exactly one space on each side, however they were written. `!=` is printed as `<>`.** Unary minus has no space. Test case: `22-operators-and-literals`.
 
 **IntelliJ default:** Different: spaces are added around most binary operators, the same as pgfmt, but `!=` is kept, and assignments in `set` are left unspaced.
 
@@ -1364,7 +1362,7 @@ where a = b;
 
 ### join-keywords
 
-🔒 **`inner join` is printed as `join`, and `left outer join` as `left join`.** A join with no condition is printed as `cross join`. Test case: `03-joins`.
+**`inner join` is printed as `join`, and `left outer join` as `left join`.** A join with no condition is printed as `cross join`. Test case: `03-joins`.
 
 **IntelliJ default:** Not handled: `inner join` and `left outer join` are left as written.
 
@@ -1387,7 +1385,7 @@ left join c
 
 ### type-names
 
-🔒 **Built-in types use one spelling:** `integer`, `bigint`, `smallint`, `boolean`, `real`, `double precision`, `numeric`, `varchar`, `char`, `timestamptz`, `timetz`. Test case: `18-type-names`.
+**Built-in types use one spelling:** `integer`, `bigint`, `smallint`, `boolean`, `real`, `double precision`, `numeric`, `varchar`, `char`, `timestamptz`, `timetz`. Test case: `18-type-names`.
 
 **IntelliJ default:** Not handled: type spellings such as `INT4` and `TIMESTAMP WITH TIME ZONE` are left as written.
 
@@ -1411,7 +1409,7 @@ create table t (
 
 ### parentheses
 
-🔒 **Parentheses are printed only where operator precedence requires them, with one exception: nested `and`/`or` groups are always parenthesized for readability.** The parser discards parentheses, so pgfmt reconstructs them from precedence.
+**Parentheses are printed only where operator precedence requires them, with one exception: nested `and`/`or` groups are always parenthesized for readability.** The parser discards parentheses, so pgfmt reconstructs them from precedence.
 
 **IntelliJ default:** Not handled: redundant parentheses are kept and none are added.
 
@@ -1433,7 +1431,7 @@ select
 
 ### quoting
 
-🔒 **Identifiers are quoted only when required:** when they contain uppercase or special characters, or when they are reserved words in that position. After `as`, any keyword is allowed without quotes.
+**Identifiers are quoted only when required:** when they contain uppercase or special characters, or when they are reserved words in that position. After `as`, any keyword is allowed without quotes.
 
 **IntelliJ default:** Not handled: quotes are left as written, including unnecessary ones such as `"order"`.
 
