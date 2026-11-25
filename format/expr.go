@@ -527,6 +527,13 @@ func (p *printer) typeCast(cast *pg.TypeCast) (string, int) {
 		text, _ := p.constant(value)
 		return "interval " + text, precAtom
 	}
+	// a placeholder written after its type, as in interval :age, stays there:
+	// inquery pastes raw text, and interval '1' day cannot move in front of ::
+	if param := cast.Arg.GetParamRef(); param != nil && typ.Location >= 0 && typ.Location < param.Location {
+		if _, ok := p.params.names[param.Number]; ok {
+			return p.typeName(typ) + " " + p.expr(cast.Arg), precAtom
+		}
+	}
 	return p.operand(cast.Arg, precTypecast) + "::" + p.typeName(typ), precTypecast
 }
 

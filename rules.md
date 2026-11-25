@@ -2088,19 +2088,21 @@ where deleted_at is not null
 
 ### placeholders
 
-**`:name` placeholders are kept exactly as written.** Names follow Clojure keywords as inquery uses them: snake_case such as `:example_key`, kebab-case such as `:user-id`, digits, mixed case, and `?` or `!` are all part of the name. A colon inside array brackets, a `::` cast, a string, or a comment is not a placeholder. Subtraction from a placeholder needs spaces: `:limit - 1`. Test cases: `09-placeholders`, `27-placeholder-fragments`.
+**`:name` placeholders are kept exactly as written.** Names follow Clojure keywords as inquery uses them: snake_case such as `:example_key`, kebab-case such as `:user-id`, digits, mixed case, and `?` or `!` are all part of the name. A colon in an array subscript or slice such as `tags[1:n]`, a `::` cast, a string, or a comment is not a placeholder; an element of an `array[...]` constructor can be one. Subtraction from a placeholder needs spaces: `:limit - 1`. Test cases: `09-placeholders`, `27-placeholder-fragments`.
 
 **IntelliJ:** Different: plain `:name` placeholders are kept, but kebab-case placeholders are split into a subtraction, and a fragment after a name, as in `active :and-filters`, becomes `active : and -filters`, which no longer parses.
 
 **sql-formatter:** Different: with `paramTypes` set to a custom pattern for inquery names, value and name placeholders are kept, including kebab-case. A fragment on its own line, such as `:filters`, is joined to the line before it. With the built-in `named` type instead, kebab-case names are split into a subtraction.
 
-inquery replaces each placeholder with raw text, so a placeholder can stand for a value, a fragment of SQL, or a table or column name. pgfmt reads each placeholder in that order and uses the first reading that parses:
+inquery replaces each placeholder with raw text, so a placeholder can stand for a value, a fragment of SQL, or a table or column name. pgfmt reads each placeholder in the order below and uses the first reading that parses:
 
 1. **A value,** such as `where id = :id` or `order by :sort-column`. This covers most placeholders.
-2. **A fragment** when a value does not fit, such as `:filters` between a `where` condition and `group by`. A fragment is kept where it was written, like a comment: on its own line or at the end of a line. The rest of the statement is formatted as usual. A fragment name needs at least three characters.
-3. **A name** when the statement does not parse without the placeholder, such as `from :table-name`.
+2. **A fragment** when a value does not fit, such as `:filters` between a `where` condition and `group by`. A fragment is kept where it was written, like a comment: on its own line or at the end of a line, and always next to a word it was written next to, so `on conflict :target do nothing` keeps its order. When the layout leaves no such place, the statement is cleaned up instead of laid out. The rest of the statement is formatted as usual. A fragment name needs at least three characters.
+3. **A name** when the statement does not parse without the placeholder, such as `from :table-name`. A placeholder after a dot, such as `t.:column`, is always a name.
+4. **A parenthesized list,** such as the rows after `values :rows` or the list after `in :ids`. A list name needs at least three characters.
+5. **Set assignments,** such as `update t set :assignments` or `set a = 1, :more-assignments`. An assignment placeholder is not aligned with the assignments around it. An assignment name needs at least four characters.
 
-A placeholder after an ordinary name, as in `where active :filters`, is read as a fragment rather than as a typed literal. A typed literal on a built-in type, such as `date :day`, remains a value.
+A placeholder after an ordinary name, as in `where active :filters`, is read as a fragment rather than as a typed literal. A typed literal on a built-in type, such as `date :day` or `interval :age`, remains a value and keeps its type in front, since the text inquery pastes in, such as `'1' day`, may not work with `::`. A placeholder cannot stand for a `with` query.
 
 Values:
 
@@ -2150,6 +2152,28 @@ select id, name :extra-columns from :table-name where active :and-filters;
 select id, name :extra-columns
 from :table-name
 where active :and-filters;
+```
+
+A list, assignments, and a fragment between two words:
+
+```sql
+insert into shop.orders (account_id, region) values :rows on conflict :conflict-target do nothing;
+
+update shop.orders set status = :status, :more-assignments where id in :order-ids;
+```
+
+↓
+
+```sql
+insert into shop.orders (account_id, region)
+values :rows
+on conflict :conflict-target do nothing;
+
+update shop.orders
+set
+  status = :status,
+  :more-assignments
+where id in :order-ids;
 ```
 
 ---

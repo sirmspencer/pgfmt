@@ -601,7 +601,12 @@ func (p *printer) setCells(nodes []*pg.Node) [][]string {
 	items := p.setItems(nodes)
 	rows := make([][]string, len(items))
 	for index, item := range items {
-		name, value, _ := strings.Cut(item, " = ")
+		name, value, found := strings.Cut(item, " = ")
+		if !found {
+			// a placeholder standing for assignments has no = to align
+			rows[index] = []string{item}
+			continue
+		}
 		rows[index] = []string{name, "= " + value}
 	}
 	return rows
@@ -613,6 +618,10 @@ func (p *printer) setItems(nodes []*pg.Node) []string {
 		target := node.GetResTarget()
 		if len(target.Indirection) > 0 || target.Val.GetMultiAssignRef() != nil {
 			fail("set target form")
+		}
+		if name, ok := p.params.assignment(target); ok {
+			items[index] = markNode(node) + ":" + name
+			continue
 		}
 		items[index] = markNode(node) + ident(target.Name) + " = " + p.expr(target.Val)
 	}

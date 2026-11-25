@@ -29,9 +29,11 @@ type placeholderMode int
 // learn: a defined type over int plus iota gives an enum; the zero value, asValue, is the default
 // learn: for any name missing from the modes map.
 const (
-	asValue    placeholderMode = iota // a parameter: $0001
-	asFragment                        // a comment the parser skips: /*__*/
-	asName                            // an identifier: _0001
+	asValue      placeholderMode = iota // a parameter: $0001
+	asFragment                          // a comment the parser skips: /*__*/
+	asName                              // an identifier: _0001
+	asList                              // a parenthesized list, as after values or in: ($001)
+	asAssignment                        // a set assignment: _1=$0001
 )
 
 // placeholders maps :name placeholders to stand-ins postgres can parse
@@ -76,20 +78,40 @@ func (ph *placeholders) substitute(src string) (string, error) {
 	}
 	var out strings.Builder
 	last := 0
-	depth := 0
-	for _, token := range scan.Tokens {
+	// one entry per open bracket: true for an array[...] constructor, whose
+	// elements can be placeholders, false for a subscript such as a[1:n]
+	var brackets []bool
+	for index, token := range scan.Tokens {
+		var previous *pg.ScanToken
+		if index > 0 {
+			previous = scan.Tokens[index-1]
+		}
 		switch token.Token {
 		case pg.Token_ASCII_91:
-			depth++
+			brackets = append(brackets, previous != nil && previous.Token == pg.Token_ARRAY)
 		case pg.Token_ASCII_93:
-			depth--
+			if len(brackets) > 0 {
+				brackets = brackets[:len(brackets)-1]
+			}
 		case pg.Token_ASCII_58:
-			if depth > 0 {
-				continue
+			if len(brackets) > 0 {
+				// in a subscript a colon is a slice; in an array constructor
+				// only an element can start with one
+				inArray := brackets[len(brackets)-1] && previous != nil &&
+					(previous.Token == pg.Token_ASCII_91 || previous.Token == pg.Token_ASCII_44)
+				if !inArray {
+					continue
+				}
 			}
 			name := placeholderName.FindString(src[token.End:])
 			if name == "" {
 				continue
+			}
+			// after a dot, as in t.:column, the placeholder can only be a
+			// name. read as a fragment it would vanish and join its neighbors.
+			if _, known := ph.modes[name]; !known && previous != nil &&
+				previous.Token == pg.Token_ASCII_46 && previous.End == token.Start {
+				ph.modes[name] = asName
 			}
 			standIn, err := ph.standIn(name)
 			if err != nil {
@@ -115,6 +137,11 @@ func (ph *placeholders) standIn(name string) (string, error) {
 		text = "/*" + strings.Repeat("_", width-4) + "*/"
 	case asName:
 		text = "_" + strings.Repeat("0", max(width-1-len(digits), 0)) + digits
+	case asList:
+		text = "($" + strings.Repeat("0", max(width-3-len(digits), 0)) + digits + ")"
+	case asAssignment:
+		// the column part stays short so it barely affects the alignment of the others
+		text = "_" + digits + "=$" + strings.Repeat("0", max(width-3-2*len(digits), 0)) + digits
 	default:
 		text = "$" + strings.Repeat("0", max(width-1-len(digits), 0)) + digits
 	}
@@ -138,8 +165,55 @@ func (ph *placeholders) escalate(name string) bool {
 	case asFragment:
 		ph.modes[name] = asName
 		return true
+	case asName:
+		// ($1) needs four characters, _1=$1 five
+		if len(name)+1 >= 4 {
+			ph.modes[name] = asList
+			return true
+		}
+		fallthrough
+	case asList:
+		if len(name)+1 >= 5 {
+			ph.modes[name] = asAssignment
+			return true
+		}
 	}
 	return false
+}
+
+// assignment returns the placeholder a set target stands in for, when the
+// target is an assignment stand-in such as _1=$0001
+func (ph *placeholders) assignment(target *pg.ResTarget) (string, bool) {
+	param := target.Val.GetParamRef()
+	if param == nil {
+		return "", false
+	}
+	name, ok := ph.names[param.Number]
+	if !ok || ph.modes[name] != asAssignment || target.Name != "_"+strconv.Itoa(int(param.Number)) {
+		return "", false
+	}
+	return name, true
+}
+
+// unwrap puts back placeholders whose stand-ins printed as more than one
+// token: a list's parentheses and an assignment's column are dropped, leaving
+// :name where the stand-in was
+func (ph *placeholders) unwrap(text string) string {
+	for name, mode := range ph.modes {
+		placeholder := regexp.QuoteMeta(":" + name)
+		var pattern *regexp.Regexp
+		switch mode {
+		case asList:
+			pattern = regexp.MustCompile(`\(((?:` + markStart + `\d+` + markEnd + `)?)` + placeholder + `\)`)
+		case asAssignment:
+			number := strconv.Itoa(int(ph.numberFor(name)))
+			pattern = regexp.MustCompile(`((?:` + markStart + `\d+` + markEnd + `)?)_` + number + ` *= *` + placeholder + `([^A-Za-z0-9_?!-]|$)`)
+		default:
+			continue
+		}
+		text = pattern.ReplaceAllString(text, "${1}:"+name+"${2}")
+	}
+	return text
 }
 
 // learn: \w is not enough here because stand-ins start with $ or _, so the class lists them.

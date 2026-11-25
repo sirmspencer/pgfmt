@@ -163,6 +163,16 @@ type statementSpan struct {
 	trailing  []*pg.ScanToken
 }
 
+// withFragments is the end of the statement including placeholder fragments
+// after its last token, which belong to it even without a semicolon
+func (span *statementSpan) withFragments() int32 {
+	through := span.through
+	for _, comment := range span.inner {
+		through = max(through, comment.End)
+	}
+	return through
+}
+
 // FormatResult formats src and reports statements it left unchanged
 // learn: the whole pipeline: swap placeholders for $n, parse, scan tokens, split the file into
 // learn: statements with their comments, print each statement, then join them with blank lines.
@@ -194,12 +204,18 @@ func formatSQL(src string, opts Options) (*Result, error) {
 	// modes remembers how each placeholder must be read, learned from failed parses
 	modes := map[string]placeholderMode{}
 	lastFragment := ""
+	// the error from the first attempt at the current text is the one
+	// reported, not one about a stand-in tried later
+	var firstErr error
 	for {
 		params := newPlaceholders(modes)
 		result, err := formatOnce(src, params, opts)
 		if err == nil {
 			result.Fixed = fixes
 			return result, nil
+		}
+		if firstErr == nil {
+			firstErr = err
 		}
 		// the parser stopped at a placeholder: read it as a fragment, then as a name
 		if name, ok := placeholderAt(src, err); ok && params.escalate(name) {
@@ -209,14 +225,28 @@ func formatSQL(src string, opts Options) (*Result, error) {
 			}
 			continue
 		}
+		// the parser stopped just after a placeholder: try its other readings,
+		// and when none fits, the error is not the placeholder's
+		if name, ok := placeholderBefore(src, err); ok {
+			if params.escalate(name) {
+				lastFragment = ""
+				if modes[name] == asFragment {
+					lastFragment = name
+				}
+				continue
+			}
+			delete(modes, name)
+		}
 		if fixed, fix, ok := removeStrayComma(src, err); ok {
 			fixes = append(fixes, fix)
 			src = fixed
+			firstErr = nil
 			continue
 		}
 		if fixed, fix, ok := insertMissingSemicolon(src, err, modes); ok {
 			fixes = append(fixes, fix)
 			src = fixed
+			firstErr = nil
 			continue
 		}
 		// hiding a fragment left a gap the statement needs, so it must be a name
@@ -225,18 +255,47 @@ func formatSQL(src string, opts Options) (*Result, error) {
 			continue
 		}
 		// the fixes found so far are still reported next to the error
-		return &Result{Fixed: fixes}, err
+		return &Result{Fixed: fixes}, firstErr
 	}
 }
 
-// placeholderAt returns the :name placeholder where a syntax error happened
+// placeholderAt returns the :name placeholder where a syntax error happened,
+// which can be inside a stand-in longer than one token
 func placeholderAt(src string, err error) (string, bool) {
 	var syntax *SyntaxError
-	if !errors.As(err, &syntax) || syntax.Offset < 0 || syntax.Offset >= len(src) || src[syntax.Offset] != ':' {
+	if !errors.As(err, &syntax) || syntax.Offset < 0 || syntax.Offset >= len(src) {
 		return "", false
 	}
-	name := placeholderName.FindString(src[syntax.Offset+1:])
-	return name, name != ""
+	start := strings.LastIndexByte(src[:syntax.Offset+1], ':')
+	if start < 0 {
+		return "", false
+	}
+	name := placeholderName.FindString(src[start+1:])
+	if name == "" || start+len(name) < syntax.Offset {
+		return "", false
+	}
+	return name, true
+}
+
+// placeholderBefore returns the :name placeholder directly before the token
+// where a syntax error happened
+func placeholderBefore(src string, err error) (string, bool) {
+	var syntax *SyntaxError
+	if !errors.As(err, &syntax) || syntax.Offset < 0 || syntax.Offset > len(src) {
+		return "", false
+	}
+	before := strings.TrimRight(src[:syntax.Offset], " \t\r\n")
+	for start := strings.LastIndexByte(before, ':'); start >= 0; start = strings.LastIndexByte(before[:start], ':') {
+		name := placeholderName.FindString(before[start+1:])
+		if name != "" && start+1+len(name) == len(before) && (start == 0 || before[start-1] != ':') {
+			return name, true
+		}
+		if name == "" || start+1+len(name) != len(before) {
+			// the closest colon is not a placeholder ending here
+			return "", false
+		}
+	}
+	return "", false
 }
 
 // formatOnce formats src without repairing syntax errors
@@ -427,9 +486,10 @@ func (p *printer) formatStatement(span *statementSpan) (string, string) {
 	if reason == "" {
 		return body, ""
 	}
-	text := p.src.cleanText(span.start, span.through)
+	through := span.withFragments()
+	text := p.src.cleanText(span.start, through)
 	if !p.sameTree(span.raw.Stmt, text) {
-		text = p.src.orig[span.start:span.through]
+		text = strings.TrimRight(p.src.orig[span.start:through], " \t\r\n")
 	}
 	if p.opts.migration && !span.semicolon {
 		text += ";"
@@ -454,8 +514,9 @@ func (p *printer) tryStatement(span *statementSpan) (body string, reason string)
 			body, reason = "", "unsupported "+skip.what
 		}
 	}()
-	// placeholders read as names were printed as their stand-ins
-	printed := p.params.restore(p.statement(span.raw.Stmt))
+	// placeholders read as names were printed as their stand-ins, and lists
+	// and assignments as :name inside the rest of their stand-in
+	printed := p.params.unwrap(p.params.restore(p.statement(span.raw.Stmt)))
 	if !p.sameTree(span.raw.Stmt, printed) {
 		return "", "formatting would change the statement"
 	}
@@ -485,7 +546,11 @@ func (p *printer) tryStatement(span *statementSpan) (body string, reason string)
 	for _, comment := range span.trailing {
 		lines[len(lines)-1] += " " + commentText(p.src, comment)
 	}
-	return strings.Join(lines, "\n"), ""
+	text, ok := p.placeFragments(strings.Join(lines, "\n"), span.start, span.withFragments())
+	if !ok {
+		return "", "a placeholder fragment could not be kept in place"
+	}
+	return text, ""
 }
 
 var markPattern = regexp.MustCompile(markStart + `(\d+)` + markEnd)
@@ -529,6 +594,10 @@ func (p *printer) placeComment(lines []string, tags []int32, comment *pg.ScanTok
 	target := len(lines) - 1
 	if next > 0 {
 		target = next - 1
+	}
+	// a blank line, such as the one around union, stays blank
+	for target > 0 && strings.TrimSpace(lines[target]) == "" {
+		target--
 	}
 	lines[target] += " " + text
 	return lines, tags
