@@ -53,5 +53,10 @@
     "@vscode/vsce": "^4.1.1",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#336791",
+    "theme": "dark"
   }
 }

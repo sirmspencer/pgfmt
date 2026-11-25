@@ -4,3 +4,4 @@ dist/test/**
 .vscode-test/**
 tsconfig.json
 *.vsix
+images/icon.svg

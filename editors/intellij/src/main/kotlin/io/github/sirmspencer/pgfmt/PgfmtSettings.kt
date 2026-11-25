@@ -1,9 +1,8 @@
 package io.github.sirmspencer.pgfmt
 
-import com.intellij.execution.configurations.PathEnvironmentVariableUtil
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginId
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.util.EnvironmentUtil
 import com.intellij.util.system.CpuArch
 import com.intellij.openapi.components.BaseState
 import com.intellij.openapi.components.Service
@@ -31,8 +30,6 @@ class PgfmtSettings : SimplePersistentStateComponent<PgfmtSettings.Options>(Opti
 }
 
 object PgfmtExecutable {
-    private const val PLUGIN_ID = "io.github.sirmspencer.pgfmt"
-
     // apps started from the dock may not see the shell path, so check homebrew directly
     private val homebrewPaths = listOf("/opt/homebrew/bin/pgfmt", "/usr/local/bin/pgfmt")
 
@@ -43,13 +40,27 @@ object PgfmtExecutable {
             return configured
         }
         bundled()?.let { return it }
-        PathEnvironmentVariableUtil.findInPath("pgfmt")?.let { return it.absolutePath }
+        onPath()?.let { return it }
         return homebrewPaths.firstOrNull { File(it).canExecute() }
+    }
+
+    private val executableName = if (SystemInfo.isWindows) "pgfmt.exe" else "pgfmt"
+
+    /** pgfmt on the path; on macOS this is the login shell's path, which apps from the dock lack. */
+    private fun onPath(): String? {
+        val path = EnvironmentUtil.getValue("PATH") ?: System.getenv("PATH") ?: return null
+        return path.split(File.pathSeparator)
+            .filter { it.isNotBlank() }
+            .map { File(it, executableName) }
+            .firstOrNull { it.isFile && it.canExecute() }
+            ?.absolutePath
     }
 
     /** The binary shipped in the plugin's bin/<os>-<arch> folder for this machine. */
     private fun bundled(): String? {
-        val plugin = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID)) ?: return null
+        // the plugin's classes are in <plugin>/lib/<jar>, and the binaries in <plugin>/bin
+        val jar = PathManager.getJarPathForClass(PgfmtExecutable::class.java) ?: return null
+        val pluginDir = File(jar).parentFile?.parentFile ?: return null
         val os = when {
             SystemInfo.isMac -> "darwin"
             SystemInfo.isLinux -> "linux"
@@ -57,8 +68,7 @@ object PgfmtExecutable {
             else -> return null
         }
         val arch = if (CpuArch.isArm64()) "arm64" else "amd64"
-        val name = if (SystemInfo.isWindows) "pgfmt.exe" else "pgfmt"
-        val file = plugin.pluginPath.resolve("bin").resolve("$os-$arch").resolve(name).toFile()
+        val file = File(pluginDir, "bin/$os-$arch/$executableName")
         if (!file.isFile) {
             return null
         }

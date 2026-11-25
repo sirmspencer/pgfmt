@@ -2,15 +2,15 @@
 
 # pgfmt
 
-pgfmt formats PostgreSQL `.sql` files with a single fixed style, so that every editor and every developer produces the same output. It parses each statement with the PostgreSQL parser (libpg_query, through `pg_query_go`) and prints it again from the syntax tree.
+pgfmt formats PostgreSQL `.sql` files with a consistent style, so that every editor and every developer produces the same output. It parses each statement with the PostgreSQL parser (libpg_query, through `pg_query_go`) and prints it again from the syntax tree.
 
-## Guarantees
+## Behavior
 
-- **Meaning is preserved.** After formatting a statement, pgfmt parses the result and compares its syntax tree with the original. If the trees differ, the statement is left exactly as written and a warning is printed.
-- **Unsupported syntax is left alone.** Statements that use syntax the printer does not handle yet are copied through unchanged and reported on stderr.
-- **Comments are removed.** Every `--` and `/* */` comment is removed, including those inside `sql` and `plpgsql` function bodies. Text inside strings is never treated as a comment.
-- **Placeholders are kept.** `:name` placeholders, including kebab-case names such as `:user-id`, are preserved. A colon inside array brackets (`tags[1:2]`), a cast (`::`), a string, or a comment is never treated as a placeholder.
-- **Literals are untouched.** String and number literals, including dollar-quoted function bodies, are printed exactly as written.
+- **Formatted statements are checked.** After formatting a statement, pgfmt parses the result and compares its syntax tree with the original. When the trees differ, the statement is kept as written and reported on stderr.
+- **Unsupported syntax keeps its structure.** A statement that uses syntax the printer does not lay out yet keeps its line breaks, with keywords lowercased and extra spaces removed, and is reported on stderr.
+- **Comments are removed.** `--` and `/* */` comments are removed, including those inside `sql` and `plpgsql` function bodies, unless the `keepComments` setting is on. Text inside strings is not treated as a comment.
+- **Placeholders are kept.** `:name` placeholders, including kebab-case and snake_case names such as `:user-id` and `:example_key`, are kept as written. A colon inside array brackets (`tags[1:2]`), a cast (`::`), a string, or a comment is not treated as a placeholder.
+- **Literals are printed as written.** String and number literals, including dollar-quoted strings, keep their original text.
 
 ## Style
 
@@ -137,12 +137,17 @@ The extension bundles pgfmt. The `pgfmt.path` setting points it at another build
 
 ### Neovim
 
-With conform.nvim:
+Install pgfmt with Homebrew, npm, or a release binary, then configure conform.nvim:
 
 ```lua
 require("conform").setup({
   formatters = {
-    pgfmt = { command = "pgfmt", stdin = true },
+    -- run from the file's folder, so the nearest .pgfmt.json applies
+    pgfmt = {
+      command = "pgfmt",
+      stdin = true,
+      cwd = function(_, ctx) return vim.fs.dirname(ctx.filename) end,
+    },
   },
   formatters_by_ft = {
     sql = { "pgfmt" },
@@ -157,7 +162,7 @@ Install **pgfmt** from the JetBrains Marketplace (Settings, Plugins). It replace
 
 ### Emacs
 
-With apheleia:
+Install pgfmt with Homebrew, npm, or a release binary, then configure apheleia, which runs it from the buffer's folder:
 
 ```elisp
 (with-eval-after-load 'apheleia
