@@ -14,7 +14,7 @@ func visibleWidth(text string) int {
 // cell except a row's last so that cells line up in columns. a cell that spans
 // several lines cannot be aligned, so its row is printed as written.
 // learn: rows is a slice of slices: rows[i] is one line's cells, rows[i][j] one column of it.
-func alignedItems(rows [][]string) string {
+func (p *printer) alignedItems(rows [][]string) string {
 	lines := make([][]string, len(rows))
 	for index, row := range rows {
 		var cells []string
@@ -27,6 +27,13 @@ func alignedItems(rows [][]string) string {
 			cells = []string{strings.Join(cells, " ")}
 		}
 		lines[index] = cells
+	}
+	if !p.opts.Align {
+		out := make([]string, len(lines))
+		for index, cells := range lines {
+			out[index] = strings.Join(cells, " ")
+		}
+		return joinItems(out)
 	}
 	// a column is as wide as its widest cell among rows that have a cell after it
 	widths := map[int]int{}
@@ -58,7 +65,7 @@ func (p *printer) alignedClause(keyword string, rows [][]string) string {
 	if len(rows) == 1 {
 		return keyword + " " + joinCells(rows[0])
 	}
-	return p.keywordMark(rows[0][0]) + keyword + "\n" + indent(alignedItems(rows))
+	return p.keywordMark(rows[0][0]) + keyword + "\n" + p.indent(p.alignedItems(rows))
 }
 
 // joinCells prints a row's cells separated by single spaces

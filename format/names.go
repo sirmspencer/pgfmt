@@ -67,8 +67,8 @@ func nameItems(nodes []*pg.Node) []string {
 }
 
 // nameList prints names as a parenthesized list that follows the lists rule
-func nameList(nodes []*pg.Node) string {
-	return list("(", nameItems(nodes), ")")
+func (p *printer) nameList(nodes []*pg.Node) string {
+	return p.list("(", nameItems(nodes), ")")
 }
 
 // canonicalTypes maps internal type names to the spelling we print

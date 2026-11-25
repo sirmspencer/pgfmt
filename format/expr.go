@@ -145,24 +145,24 @@ func (p *printer) exprPrec(node *pg.Node) (string, int) {
 	case node.GetCaseExpr() != nil:
 		return p.caseExpr(node.GetCaseExpr()), precAtom
 	case node.GetCoalesceExpr() != nil:
-		return list("coalesce(", p.exprs(node.GetCoalesceExpr().Args), ")"), precAtom
+		return p.list("coalesce(", p.exprs(node.GetCoalesceExpr().Args), ")"), precAtom
 	case node.GetMinMaxExpr() != nil:
 		minMax := node.GetMinMaxExpr()
 		name := "greatest"
 		if minMax.Op == pg.MinMaxOp_IS_LEAST {
 			name = "least"
 		}
-		return list(name+"(", p.exprs(minMax.Args), ")"), precAtom
+		return p.list(name+"(", p.exprs(minMax.Args), ")"), precAtom
 	case node.GetSqlvalueFunction() != nil:
 		return sqlValueFunction(node.GetSqlvalueFunction()), precAtom
 	case node.GetAArrayExpr() != nil:
-		return list("array[", p.exprs(node.GetAArrayExpr().Elements), "]"), precAtom
+		return p.list("array[", p.exprs(node.GetAArrayExpr().Elements), "]"), precAtom
 	case node.GetRowExpr() != nil:
 		row := node.GetRowExpr()
 		if row.RowFormat == pg.CoercionForm_COERCE_IMPLICIT_CAST {
-			return list("(", p.exprs(row.Args), ")"), precAtom
+			return p.list("(", p.exprs(row.Args), ")"), precAtom
 		}
-		return list("row(", p.exprs(row.Args), ")"), precAtom
+		return p.list("row(", p.exprs(row.Args), ")"), precAtom
 	case node.GetAIndirection() != nil:
 		return p.indirection(node.GetAIndirection()), precAtom
 	case node.GetCollateClause() != nil:
@@ -291,7 +291,7 @@ func (p *printer) aExpr(expr *pg.A_Expr) (string, int) {
 		if values == nil {
 			fail("in without list")
 		}
-		return p.operand(expr.Lexpr, precLike+1) + list(word, p.exprs(values.Items), ")"), precLike
+		return p.operand(expr.Lexpr, precLike+1) + p.list(word, p.exprs(values.Items), ")"), precLike
 	case pg.A_Expr_Kind_AEXPR_LIKE, pg.A_Expr_Kind_AEXPR_ILIKE:
 		words := map[string]string{"~~": " like ", "!~~": " not like ", "~~*": " ilike ", "!~~*": " not ilike "}
 		word, ok := words[op]
@@ -352,10 +352,10 @@ func (p *printer) boolExpr(expr *pg.BoolExpr) (string, int) {
 
 // subquery prints a parenthesized select with its body indented
 // learn: the printer builds text bottom up. a subquery prints itself starting at column 0 and the
-// learn: caller shifts every line right with indent(). nothing ever needs to know its absolute
+// learn: caller shifts every line right with p.indent(). nothing ever needs to know its absolute
 // learn: column.
 func (p *printer) subquery(node *pg.Node) string {
-	return "(\n" + indent(p.statement(node)) + "\n)"
+	return "(\n" + p.indent(p.statement(node)) + "\n)"
 }
 
 func (p *printer) subLink(link *pg.SubLink) (string, int) {
@@ -410,7 +410,7 @@ func (p *printer) funcCall(call *pg.FuncCall) (string, int) {
 		}
 		text = name + "(" + args + ")"
 	default:
-		text = list(name+"(", p.exprs(call.Args), ")")
+		text = p.list(name+"(", p.exprs(call.Args), ")")
 	}
 	if call.AggFilter != nil {
 		text += " filter (where " + p.expr(call.AggFilter) + ")"
@@ -545,7 +545,7 @@ func (p *printer) caseExpr(expr *pg.CaseExpr) string {
 	if expr.Defresult != nil {
 		lines = append(lines, mark(minLocation(expr.Defresult))+"else "+p.expr(expr.Defresult))
 	}
-	return head + "\n" + indent(strings.Join(lines, "\n")) + "\nend"
+	return head + "\n" + p.indent(strings.Join(lines, "\n")) + "\nend"
 }
 
 func (p *printer) indirection(expr *pg.A_Indirection) string {

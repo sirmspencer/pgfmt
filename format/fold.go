@@ -142,7 +142,7 @@ func canonicalCode(code string) string {
 // multi-line string or comment are left alone so their contents never change.
 // learn: removing the shared indentation first makes the result the same no matter how the body
 // learn: was indented before, so formatting twice gives the same output.
-func reindentBody(body string) string {
+func reindentBody(body, unit string) string {
 	end := strings.Index(body[1:], "$")
 	if !strings.HasPrefix(body, "$") || end < 0 {
 		return body
@@ -187,7 +187,7 @@ func reindentBody(body string) string {
 		case strings.TrimSpace(line) == "":
 			lines[index] = ""
 		default:
-			lines[index] = indentUnit + line[shared:]
+			lines[index] = unit + line[shared:]
 		}
 	}
 	return tag + strings.Join(lines, "\n") + tag

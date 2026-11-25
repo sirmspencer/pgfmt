@@ -11,9 +11,8 @@ import (
 
 // learn: untyped constants. \x01 to \x03 are control characters that never appear in sql, so they
 // learn: are safe as invisible markers inside the text we build. literalNewline stands in for
-// learn: newlines inside string literals so indent() cannot change a literal's contents.
+// learn: newlines inside string literals so p.indent() cannot change a literal's contents.
 const (
-	indentUnit     = "  "
 	markStart      = "\x01"
 	markEnd        = "\x02"
 	literalNewline = "\x03"
@@ -24,6 +23,7 @@ const (
 type printer struct {
 	src    *source
 	params *placeholders
+	opts   Options
 }
 
 // mark tags the start of a printed item with its source offset so
@@ -75,11 +75,21 @@ func minLocation(node proto.Message) int32 {
 // indent shifts every non-empty line one level right
 // learn: strings.Split returns a slice. assigning to lines[index] changes the slice in place, then
 // learn: strings.Join puts it back together.
-func indent(text string) string {
+func (p *printer) indent(text string) string {
+	return indentBy(text, p.unit())
+}
+
+// unit is one configured level of indentation
+func (p *printer) unit() string {
+	return strings.Repeat(" ", p.opts.Indent)
+}
+
+// indentBy shifts every non-empty line right by unit
+func indentBy(text, unit string) string {
 	lines := strings.Split(text, "\n")
 	for index, line := range lines {
 		if line != "" {
-			lines[index] = indentUnit + line
+			lines[index] = unit + line
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -92,7 +102,7 @@ func (p *printer) clause(keyword string, items []string) string {
 	if len(items) == 1 {
 		return keyword + " " + items[0]
 	}
-	return p.keywordMark(items[0]) + keyword + "\n" + indent(joinItems(items))
+	return p.keywordMark(items[0]) + keyword + "\n" + p.indent(joinItems(items))
 }
 
 // keywordMark tags a keyword printed alone on its line with the position of
@@ -116,9 +126,6 @@ func (p *printer) keywordMark(first string) string {
 	return ""
 }
 
-// maxInlineItems is the longest parenthesized list that stays on one line
-const maxInlineItems = 3
-
 // joinItems puts each item on its own line, with a comma after every item but the last
 func joinItems(items []string) string {
 	return strings.Join(items, ",\n")
@@ -127,7 +134,7 @@ func joinItems(items []string) string {
 // list prints a parenthesized list on one line when it has at most
 // maxInlineItems single-line items, and one item per line otherwise
 // learn: open and close are passed in so one helper serves "name(" ")", "in (" ")", and "array[" "]".
-func list(open string, items []string, close string) string {
+func (p *printer) list(open string, items []string, close string) string {
 	multiline := false
 	for _, item := range items {
 		if strings.Contains(item, "\n") {
@@ -135,10 +142,10 @@ func list(open string, items []string, close string) string {
 		}
 	}
 	// a short list stays on one line unless an item already spans several lines
-	if len(items) <= maxInlineItems && !multiline {
+	if len(items) <= p.opts.ParenListLimit && !multiline {
 		return open + strings.Join(items, ", ") + close
 	}
-	return open + "\n" + indent(joinItems(items)) + "\n" + close
+	return open + "\n" + p.indent(joinItems(items)) + "\n" + close
 }
 
 // conditionItems splits a top-level and/or into lines led by their connective
@@ -157,7 +164,7 @@ func (p *printer) conditionItems(node *pg.Node) []string {
 	for index, arg := range expr.Args {
 		text := ""
 		if nested := arg.GetBoolExpr(); nested != nil && nested.Boolop != pg.BoolExprType_NOT_EXPR {
-			text = "(\n" + indent(strings.Join(p.conditionItems(arg), "\n")) + "\n)"
+			text = "(\n" + p.indent(strings.Join(p.conditionItems(arg), "\n")) + "\n)"
 		} else {
 			text = p.operand(arg, precAnd+1)
 		}
@@ -174,7 +181,7 @@ func (p *printer) conditionClause(keyword string, node *pg.Node) string {
 	if len(items) == 1 {
 		return keyword + " " + items[0]
 	}
-	return p.keywordMark(items[0]) + keyword + "\n" + indent(strings.Join(items, "\n"))
+	return p.keywordMark(items[0]) + keyword + "\n" + p.indent(strings.Join(items, "\n"))
 }
 
 // statement prints any supported statement node
@@ -242,7 +249,11 @@ func (p *printer) selectStmt(stmt *pg.SelectStmt) string {
 			word += " all"
 		}
 		// the empty strings become blank lines around the set operator
-		parts = append(parts, p.setOperand(stmt, stmt.Larg, false), "", word, "", p.setOperand(stmt, stmt.Rarg, true))
+		if p.opts.BlankLinesAroundSetOperators {
+			parts = append(parts, p.setOperand(stmt, stmt.Larg, false), "", word, "", p.setOperand(stmt, stmt.Rarg, true))
+		} else {
+			parts = append(parts, p.setOperand(stmt, stmt.Larg, false), word, p.setOperand(stmt, stmt.Rarg, true))
+		}
 	case len(stmt.ValuesLists) > 0:
 		parts = append(parts, p.values(stmt.ValuesLists))
 	default:
@@ -315,7 +326,7 @@ func (p *printer) selectList(stmt *pg.SelectStmt) string {
 		if len(stmt.DistinctClause) == 1 && stmt.DistinctClause[0].Node == nil {
 			keyword += " distinct"
 		} else {
-			keyword += " distinct on " + list("(", p.exprs(stmt.DistinctClause), ")")
+			keyword += " distinct on " + p.list("(", p.exprs(stmt.DistinctClause), ")")
 		}
 	}
 	if len(stmt.TargetList) == 0 {
@@ -331,6 +342,9 @@ func (p *printer) selectList(stmt *pg.SelectStmt) string {
 	if p.inlineItems(stmt.TargetList, items) {
 		return keyword + " " + strings.Join(items, ", ")
 	}
+	if len(items) == 1 {
+		return p.keywordMark(items[0]) + keyword + "\n" + p.indent(items[0])
+	}
 	// aliases line up when the list is split across lines
 	return p.alignedClause(keyword, rows)
 }
@@ -341,6 +355,9 @@ func (p *printer) shortClause(keyword string, nodes []*pg.Node, items []string) 
 	if p.inlineItems(nodes, items) {
 		return keyword + " " + strings.Join(items, ", ")
 	}
+	if len(items) == 1 {
+		return p.keywordMark(items[0]) + keyword + "\n" + p.indent(items[0])
+	}
 	return p.clause(keyword, items)
 }
 
@@ -348,7 +365,11 @@ func (p *printer) shortClause(keyword string, nodes []*pg.Node, items []string) 
 // are at most maxInlineItems, none spans several lines, and no comment sits
 // between items, since on one line that comment would lose its place
 func (p *printer) inlineItems(nodes []*pg.Node, items []string) bool {
-	if len(items) < 2 || len(items) > maxInlineItems {
+	// a limit of 0 always splits, even a single item
+	if p.opts.ClauseListLimit == 0 {
+		return false
+	}
+	if len(items) < 2 || len(items) > p.opts.ClauseListLimit {
 		return len(items) < 2
 	}
 	for _, item := range items {
@@ -403,7 +424,7 @@ func (p *printer) markedExprs(nodes []*pg.Node) []string {
 func (p *printer) values(lists []*pg.Node) string {
 	rows := make([]string, len(lists))
 	for index, node := range lists {
-		rows[index] = markNode(node) + list("(", p.exprs(node.GetList().Items), ")")
+		rows[index] = markNode(node) + p.list("(", p.exprs(node.GetList().Items), ")")
 	}
 	return p.clause("values", rows)
 }
@@ -421,7 +442,7 @@ func (p *printer) with(with *pg.WithClause) string {
 		}
 		text := mark(cte.Location) + ident(cte.Ctename)
 		if len(cte.Aliascolnames) > 0 {
-			text += " " + nameList(cte.Aliascolnames)
+			text += " " + p.nameList(cte.Aliascolnames)
 		}
 		text += " as "
 		switch cte.Ctematerialized {
@@ -530,10 +551,10 @@ func (p *printer) join(join *pg.JoinExpr) string {
 	}
 	text := p.fromItem(join.Larg) + "\n" + markNode(join.Rarg) + word + " " + p.fromItem(join.Rarg)
 	if len(join.UsingClause) > 0 {
-		text += "\n" + indent("using "+nameList(join.UsingClause))
+		text += "\n" + p.indent("using "+p.nameList(join.UsingClause))
 	}
 	if join.Quals != nil {
-		text += "\n" + indent(p.onClause(join.Quals))
+		text += "\n" + p.indent(p.onClause(join.Quals))
 	}
 	return text
 }
@@ -566,7 +587,7 @@ func (p *printer) alias(alias *pg.Alias) string {
 	}
 	text := " as " + ident(alias.Aliasname)
 	if len(alias.Colnames) > 0 {
-		text += " " + nameList(alias.Colnames)
+		text += " " + p.nameList(alias.Colnames)
 	}
 	return text
 }
@@ -618,7 +639,7 @@ func (p *printer) insertStmt(stmt *pg.InsertStmt) string {
 			}
 			cols[index] = ident(target.Name)
 		}
-		head += " " + list("(", cols, ")")
+		head += " " + p.list("(", cols, ")")
 	}
 	parts = append(parts, mark(stmt.Relation.Location)+head)
 	if stmt.SelectStmt == nil {
@@ -632,7 +653,7 @@ func (p *printer) insertStmt(stmt *pg.InsertStmt) string {
 			if infer.Conname != "" {
 				text += " on constraint " + ident(infer.Conname)
 			} else {
-				text += " " + list("(", p.indexElems(infer.IndexElems), ")")
+				text += " " + p.list("(", p.indexElems(infer.IndexElems), ")")
 				if infer.WhereClause != nil {
 					text += " where " + p.expr(infer.WhereClause)
 				}

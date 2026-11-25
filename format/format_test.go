@@ -464,3 +464,66 @@ func TestSQLSyntaxFunctions(t *testing.T) {
 	}
 	assertOutput(t, result.Output, want)
 }
+
+func TestSettings(t *testing.T) {
+	with := func(change func(*Options)) Options {
+		opts := DefaultOptions()
+		change(&opts)
+		return opts
+	}
+	tests := []struct {
+		name        string
+		opts        Options
+		input, want string
+	}{
+		{"indent", with(func(o *Options) { o.Indent = 4 }), "select a, b, c, d from t", "select\n    a,\n    b,\n    c,\n    d\nfrom t\n"},
+		{"clause list limit", with(func(o *Options) { o.ClauseListLimit = 1 }), "select a, b from t order by a, b", "select\n  a,\n  b\nfrom t\norder by\n  a,\n  b\n"},
+		{"clause limit leaves parentheses alone", with(func(o *Options) { o.ClauseListLimit = 1 }), "select f(a, b)", "select f(a, b)\n"},
+		{"paren list limit", with(func(o *Options) { o.ParenListLimit = 5 }), "select f(a, b, c, d, e) where x in (1, 2, 3, 4, 5, 6)", "select f(a, b, c, d, e)\nwhere x in (\n  1,\n  2,\n  3,\n  4,\n  5,\n  6\n)\n"},
+		{"paren limit leaves clauses alone", with(func(o *Options) { o.ParenListLimit = 1 }), "select a, b from t", "select a, b\nfrom t\n"},
+		{"keep comments", with(func(o *Options) { o.KeepComments = true }), "-- note\nselect a, -- first\n  b from t", "-- note\nselect\n  a, -- first\n  b\nfrom t\n"},
+		{"clause list limit 0 splits a single item", with(func(o *Options) { o.ClauseListLimit = 0 }), "select id from t group by id order by id",
+			"select\n  id\nfrom t\ngroup by\n  id\norder by\n  id\n"},
+		{"clause list limit 0 splits every column list", with(func(o *Options) { o.ClauseListLimit = 0 }), "insert into t (a) values (1) returning a, b",
+			"insert into t (a)\nvalues (1)\nreturning\n  a,\n  b\n"},
+		{"paren list limit 0 splits a single argument", with(func(o *Options) { o.ParenListLimit = 0 }), "select f(a), now() from t where x in (1)",
+			"select\n  f(\n    a\n  ),\n  now()\nfrom t\nwhere x in (\n  1\n)\n"},
+		{"no alignment", with(func(o *Options) { o.Align = false }), "update t set a = 1, longer = 2", "update t\nset\n  a = 1,\n  longer = 2\n"},
+		{"no blank lines around set operators", with(func(o *Options) { o.BlankLinesAroundSetOperators = false }), "select 1 union select 2", "select 1\nunion\nselect 2\n"},
+		{"indent in function bodies", with(func(o *Options) { o.Indent = 4 }), "create function f() returns int language sql as $$\nselect a, b, c, d from t\n$$",
+			"create function f()\n    returns integer\n    language sql\nas $$\n    select\n        a,\n        b,\n        c,\n        d\n    from t\n$$\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := FormatResultWith(test.input, test.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertOutput(t, result.Output, test.want)
+			again, err := FormatResultWith(result.Output, test.opts)
+			if err != nil || again.Output != result.Output {
+				t.Errorf("formatting twice changed the output")
+			}
+		})
+	}
+}
+
+func TestParseOptions(t *testing.T) {
+	opts, err := ParseOptions([]byte(`{"indent": 4, "keepComments": true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := DefaultOptions()
+	want.Indent, want.KeepComments = 4, true
+	if opts != want {
+		t.Errorf("options = %+v, want %+v", opts, want)
+	}
+	if opts, err := ParseOptions([]byte(`{}`)); err != nil || opts != DefaultOptions() {
+		t.Errorf("empty settings = %+v, %v, want the defaults", opts, err)
+	}
+	for _, bad := range []string{`{"indnet": 4}`, `{"indent": 0}`, `{"indent": 9}`, `{"clauseListLimit": -1}`, `{"parenListLimit": -1}`, `{"align": "yes"}`, `not json`} {
+		if _, err := ParseOptions([]byte(bad)); err == nil {
+			t.Errorf("%s: no error", bad)
+		}
+	}
+}

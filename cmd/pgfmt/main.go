@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 
 	"github.com/sirmspencer/pgfmt/format"
@@ -44,9 +45,10 @@ func currentVersion() string {
 func main() {
 	fix := flag.Bool("fix", false, "format each file and remove stray commas, rewriting it in place")
 	check := flag.Bool("check", false, "report unformatted files, fixable problems, and syntax errors without changing anything")
+	configPath := flag.String("config", "", "settings file to use instead of searching for "+configName)
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: pgfmt [-check | -fix | -version] [file ...]")
+		fmt.Fprintln(os.Stderr, "usage: pgfmt [-check | -fix | -version] [-config file] [file ...]")
 		fmt.Fprintln(os.Stderr, "with no files, pgfmt formats stdin to stdout")
 		flag.PrintDefaults()
 	}
@@ -59,7 +61,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "pgfmt: -check and -fix cannot be used together")
 		os.Exit(2)
 	}
-	os.Exit(run(flag.Args(), *fix, *check))
+	os.Exit(run(flag.Args(), *fix, *check, &settings{explicit: *configPath, found: map[string]format.Options{}}))
 }
 
 // exit statuses
@@ -71,18 +73,24 @@ const (
 
 // learn: `fix, check bool` declares two parameters of the same type. io.ReadAll(os.Stdin) reads
 // learn: until end of input. bytes.Equal compares byte slices; == does not work on slices in go.
-func run(files []string, fix, check bool) int {
+func run(files []string, fix, check bool, config *settings) int {
 	if len(files) == 0 {
 		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "pgfmt:", err)
 			return statusErrors
 		}
+		cwd, _ := os.Getwd()
+		opts, err := config.forDir(cwd)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "pgfmt:", err)
+			return statusErrors
+		}
 		if check {
-			return checkFile("<stdin>", input)
+			return checkFile("<stdin>", input, opts)
 		}
 		// editors pipe the buffer through here: on an error nothing reaches stdout
-		result, err := format.FormatResult(string(input))
+		result, err := format.FormatResultWith(string(input), opts)
 		report(os.Stderr, "<stdin>", result, err, err == nil)
 		if err != nil {
 			return statusErrors
@@ -99,11 +107,17 @@ func run(files []string, fix, check bool) int {
 			status = statusErrors
 			continue
 		}
-		if check {
-			status = max(status, checkFile(path, input))
+		opts, err := config.forFile(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "pgfmt:", err)
+			status = statusErrors
 			continue
 		}
-		result, err := format.FormatResult(string(input))
+		if check {
+			status = max(status, checkFile(path, input, opts))
+			continue
+		}
+		result, err := format.FormatResultWith(string(input), opts)
 		// without -fix the file is not changed, so fixes are only possible
 		report(os.Stderr, path, result, err, fix && err == nil)
 		if err != nil {
@@ -126,8 +140,8 @@ func run(files []string, fix, check bool) int {
 }
 
 // checkFile reports everything -fix would change or could not fix, on stdout
-func checkFile(name string, input []byte) int {
-	result, err := format.FormatResult(string(input))
+func checkFile(name string, input []byte, opts format.Options) int {
+	result, err := format.FormatResultWith(string(input), opts)
 	report(os.Stdout, name, result, err, false)
 	if err != nil {
 		return statusErrors
@@ -163,4 +177,63 @@ func report(out io.Writer, name string, result *format.Result, err error, applie
 			fmt.Fprintf(out, "%s: %v\n", name, err)
 		}
 	}
+}
+
+// configName is the settings file pgfmt looks for
+const configName = ".pgfmt.json"
+
+// settings finds and caches the options for each directory
+// learn: a map value is cached per directory, so a run over many files reads each config once.
+type settings struct {
+	explicit string
+	found    map[string]format.Options
+}
+
+func (config *settings) forFile(path string) (format.Options, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return format.Options{}, err
+	}
+	return config.forDir(filepath.Dir(abs))
+}
+
+// forDir uses -config when given, otherwise the nearest .pgfmt.json in dir or
+// a parent directory, otherwise the defaults
+func (config *settings) forDir(dir string) (format.Options, error) {
+	if config.explicit != "" {
+		return load(config.explicit)
+	}
+	if opts, ok := config.found[dir]; ok {
+		return opts, nil
+	}
+	opts := format.DefaultOptions()
+	candidate := filepath.Join(dir, configName)
+	switch _, err := os.Stat(candidate); {
+	case err == nil:
+		loaded, err := load(candidate)
+		if err != nil {
+			return opts, err
+		}
+		opts = loaded
+	case filepath.Dir(dir) != dir:
+		parent, err := config.forDir(filepath.Dir(dir))
+		if err != nil {
+			return opts, err
+		}
+		opts = parent
+	}
+	config.found[dir] = opts
+	return opts, nil
+}
+
+func load(path string) (format.Options, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return format.Options{}, err
+	}
+	opts, err := format.ParseOptions(data)
+	if err != nil {
+		return opts, fmt.Errorf("%s: %w", path, err)
+	}
+	return opts, nil
 }

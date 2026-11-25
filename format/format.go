@@ -6,6 +6,8 @@
 package format
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -55,6 +57,65 @@ func (err *SyntaxError) Error() string {
 	return fmt.Sprintf("%d:%d: %s", err.Line, err.Column, err.Message)
 }
 
+// Options are the formatting settings. DefaultOptions is the house style;
+// a .pgfmt.json file changes individual settings.
+type Options struct {
+	// Indent is the number of spaces per indentation level
+	Indent int `json:"indent"`
+	// ClauseListLimit is the most items select, group by, order by, and
+	// returning keep on the keyword's line; 0 always splits, even one item
+	ClauseListLimit int `json:"clauseListLimit"`
+	// ParenListLimit is the most items a parenthesized list, such as function
+	// arguments or an in list, keeps on one line; 0 always splits a non-empty list
+	ParenListLimit int `json:"parenListLimit"`
+	// KeepComments keeps comments in place instead of removing them
+	KeepComments bool `json:"keepComments"`
+	// Align lines up create table columns, set assignments, and select aliases
+	Align bool `json:"align"`
+	// BlankLinesAroundSetOperators puts a blank line before and after union,
+	// intersect, and except
+	BlankLinesAroundSetOperators bool `json:"blankLinesAroundSetOperators"`
+}
+
+// DefaultOptions returns the house style
+func DefaultOptions() Options {
+	return Options{
+		Indent:                       2,
+		ClauseListLimit:              3,
+		ParenListLimit:               3,
+		KeepComments:                 false,
+		Align:                        true,
+		BlankLinesAroundSetOperators: true,
+	}
+}
+
+// ParseOptions reads settings from json, starting from DefaultOptions, so a
+// file only needs the settings it changes. unknown keys are an error, which
+// catches misspelled settings.
+// learn: json.Decoder fills the struct fields named by the json tags. starting from the defaults
+// learn: means any key missing from the file keeps its default value.
+func ParseOptions(data []byte) (Options, error) {
+	opts := DefaultOptions()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&opts); err != nil {
+		return opts, err
+	}
+	return opts, opts.validate()
+}
+
+func (opts Options) validate() error {
+	switch {
+	case opts.Indent < 1 || opts.Indent > 8:
+		return fmt.Errorf("indent must be between 1 and 8, got %d", opts.Indent)
+	case opts.ClauseListLimit < 0:
+		return fmt.Errorf("clauseListLimit must be 0 or more, got %d", opts.ClauseListLimit)
+	case opts.ParenListLimit < 0:
+		return fmt.Errorf("parenListLimit must be 0 or more, got %d", opts.ParenListLimit)
+	}
+	return nil
+}
+
 // Format returns the formatted text of a sql file
 func Format(src string) (string, error) {
 	result, err := FormatResult(src)
@@ -82,7 +143,15 @@ type statementSpan struct {
 // learn: the whole pipeline: swap placeholders for $n, parse, scan tokens, split the file into
 // learn: statements with their comments, print each statement, then join them with blank lines.
 func FormatResult(src string) (*Result, error) {
-	result, err := formatSQL(src)
+	return FormatResultWith(src, DefaultOptions())
+}
+
+// FormatResultWith is FormatResult with settings other than the defaults
+func FormatResultWith(src string, opts Options) (*Result, error) {
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+	result, err := formatSQL(src, opts)
 	if err != nil {
 		return result, err
 	}
@@ -92,16 +161,18 @@ func FormatResult(src string) (*Result, error) {
 
 // formatSQL is FormatResult, except that newlines inside literals are still
 // marked, so a caller nesting the output (a function body) can indent it safely
-func formatSQL(src string) (*Result, error) {
-	// comments are removed; blanking them keeps every offset and line number
-	src = stripComments(src)
+func formatSQL(src string, opts Options) (*Result, error) {
+	// comments are removed unless kept; blanking them keeps every offset and line number
+	if !opts.KeepComments {
+		src = stripComments(src)
+	}
 	var fixes []Fixed
 	// modes remembers how each placeholder must be read, learned from failed parses
 	modes := map[string]placeholderMode{}
 	lastFragment := ""
 	for {
 		params := newPlaceholders(modes)
-		result, err := formatOnce(src, params)
+		result, err := formatOnce(src, params, opts)
 		if err == nil {
 			result.Fixed = fixes
 			return result, nil
@@ -140,7 +211,7 @@ func placeholderAt(src string, err error) (string, bool) {
 }
 
 // formatOnce formats src without repairing syntax errors
-func formatOnce(src string, params *placeholders) (*Result, error) {
+func formatOnce(src string, params *placeholders, opts Options) (*Result, error) {
 	text, err := params.substitute(src)
 	if err != nil {
 		return nil, syntaxError(src, err)
@@ -158,7 +229,7 @@ func formatOnce(src string, params *placeholders) (*Result, error) {
 		return nil, syntaxError(src, err)
 	}
 	spans, footer := splitStatements(source, tree)
-	printer := &printer{src: source, params: params}
+	printer := &printer{src: source, params: params, opts: opts}
 
 	result := &Result{}
 	var groups []string

@@ -2,7 +2,7 @@
 
 # pgfmt Formatting Rules
 
-This document lists the formatting rules pgfmt applies. Each rule shows input and the output pgfmt produces, and names the test case in `testdata/cases` that enforces it. Every example in this file is checked against the formatter.
+This document lists the formatting rules pgfmt applies with its default settings; [settings](#settings) describes the ones a `.pgfmt.json` file can change. Each rule shows input and the output pgfmt produces, and names the test case in `testdata/cases` that enforces it. Every example in this file is checked against the formatter.
 
 ## Comparison with other formatters
 
@@ -2053,4 +2053,230 @@ select a
 from t;
 
 vacuum analyze users, orders;
+```
+
+---
+
+## Settings
+
+The rules above are the defaults. A `.pgfmt.json` file changes individual settings; settings it does not mention keep their defaults. pgfmt uses the nearest `.pgfmt.json` in the formatted file's directory or a parent directory, or, for stdin, in the current directory or a parent. `pgfmt -config file` uses a specific file instead. An unknown setting or an invalid value is an error.
+
+The default settings:
+
+```json
+{
+  "indent": 2,
+  "clauseListLimit": 3,
+  "parenListLimit": 3,
+  "keepComments": false,
+  "align": true,
+  "blankLinesAroundSetOperators": true
+}
+```
+
+### indent
+
+**The number of spaces per indentation level,** from 1 to 8. It applies everywhere, including inside function bodies. Default `2`.
+
+With `{"indent": 4}`:
+
+```sql
+select id, email, name, created_at from users where active = true and id = :id;
+```
+
+↓
+
+```sql
+select
+    id,
+    email,
+    name,
+    created_at
+from users
+where
+    active = true
+    and id = :id;
+```
+
+### clauseListLimit
+
+**The most items `select`, `group by`, `order by`, and `returning` keep on the keyword's line.** `0` always splits, even a single item. It does not affect parenthesized lists. Default `3`.
+
+With `{"clauseListLimit": 1}`:
+
+```sql
+select id, email from users order by id, email;
+```
+
+↓
+
+```sql
+select
+  id,
+  email
+from users
+order by
+  id,
+  email;
+```
+
+With `{"clauseListLimit": 0}`:
+
+```sql
+select id from users order by id;
+```
+
+↓
+
+```sql
+select
+  id
+from users
+order by
+  id;
+```
+
+With `{"clauseListLimit": 5}`:
+
+```sql
+select id, email, name, region, created_at from users;
+```
+
+↓
+
+```sql
+select id, email, name, region, created_at
+from users;
+```
+
+### parenListLimit
+
+**The most items a parenthesized list keeps on one line:** function arguments and parameters, `in (...)` lists, `insert` columns and rows, and the other lists in [lists](#lists). `0` always splits a list with at least one item; an empty list such as `now()` stays as it is. It does not affect `select` lists. Default `3`.
+
+With `{"parenListLimit": 6}`:
+
+```sql
+select make_timestamp(:year, :month, :day, 0, 0, 0) where id in (1, 2, 3, 4);
+```
+
+↓
+
+```sql
+select make_timestamp(:year, :month, :day, 0, 0, 0)
+where id in (1, 2, 3, 4);
+```
+
+With `{"parenListLimit": 1}`:
+
+```sql
+select coalesce(a, b) from t;
+```
+
+↓
+
+```sql
+select coalesce(
+  a,
+  b
+)
+from t;
+```
+
+With `{"parenListLimit": 0}`:
+
+```sql
+select lower(email), now() from users where id in (:id);
+```
+
+↓
+
+```sql
+select
+  lower(
+    email
+  ),
+  now()
+from users
+where id in (
+  :id
+);
+```
+
+### keepComments
+
+**Keep comments in place instead of removing them.** Comments stay next to the code they were written beside, and a select list with a comment between items is split one item per line so the comment keeps its place. Default `false`.
+
+With `{"keepComments": true}`:
+
+```sql
+-- leading comment for the query
+select id, -- primary key
+  email
+from users; -- trailing
+```
+
+↓
+
+```sql
+-- leading comment for the query
+select
+  id, -- primary key
+  email
+from users; -- trailing
+```
+
+### align
+
+**Align `create table` columns, `set` assignments, and select aliases into columns,** as described in [alignment](#alignment). With `false`, one space separates a name from what follows it everywhere. Default `true`.
+
+With `{"align": false}`:
+
+```sql
+update rate_limits set max_requests_per_minute = :max-requests-per-minute, burst = :burst where id = :id;
+```
+
+↓
+
+```sql
+update rate_limits
+set
+  max_requests_per_minute = :max-requests-per-minute,
+  burst = :burst
+where id = :id;
+```
+
+With `{"align": false}`:
+
+```sql
+create table rate_limits (id bigserial primary key, max_requests_per_minute integer not null, burst integer not null default 10);
+```
+
+↓
+
+```sql
+create table rate_limits (
+  id bigserial primary key,
+  max_requests_per_minute integer not null,
+  burst integer not null default 10
+);
+```
+
+### blankLinesAroundSetOperators
+
+**Put a blank line before and after `union`, `intersect`, and `except`.** Default `true`.
+
+With `{"blankLinesAroundSetOperators": false}`:
+
+```sql
+select id from users union all select id from archived_users;
+```
+
+↓
+
+```sql
+select id
+from users
+union all
+select id
+from archived_users;
 ```

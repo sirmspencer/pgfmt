@@ -30,31 +30,37 @@ func splitDollarBody(body string) (tag, code string, ok bool) {
 
 // formatSQLBody formats a language sql body with the same rules as a file:
 // a one-line result stays on the as line, anything longer is indented inside the quotes
-func formatSQLBody(body string) string {
+func formatSQLBody(body string, opts Options) string {
 	tag, code, ok := splitDollarBody(body)
 	if !ok {
 		return body
 	}
-	code = stripCommentLines(code)
-	result, err := formatSQL(code)
+	unit := strings.Repeat(" ", opts.Indent)
+	if !opts.KeepComments {
+		code = stripCommentLines(code)
+	}
+	result, err := formatSQL(code, opts)
 	if err != nil || strings.TrimSpace(result.Output) == "" {
-		return reindentBody(lowercaseBody(body))
+		return reindentBody(lowercaseBody(body), unit)
 	}
 	out := strings.TrimSuffix(result.Output, "\n")
 	if !strings.Contains(out, "\n") {
 		return tag + " " + strings.ReplaceAll(out, literalNewline, "\n") + " " + tag
 	}
-	return tag + "\n" + strings.ReplaceAll(indent(out), literalNewline, "\n") + "\n" + tag
+	return tag + "\n" + strings.ReplaceAll(indentBy(out, unit), literalNewline, "\n") + "\n" + tag
 }
 
 // formatPlpgsqlBody formats each standalone sql statement inside a plpgsql
 // body, then lowercases and indents the whole body
-func formatPlpgsqlBody(body string) string {
+func formatPlpgsqlBody(body string, opts Options) string {
 	tag, code, ok := splitDollarBody(body)
 	if !ok {
 		return body
 	}
-	code = stripCommentLines(code)
+	unit := strings.Repeat(" ", opts.Indent)
+	if !opts.KeepComments {
+		code = stripCommentLines(code)
+	}
 	var out strings.Builder
 	last := 0
 	for _, span := range plpgsqlStatements(code) {
@@ -66,11 +72,11 @@ func formatPlpgsqlBody(body string) string {
 		if strings.TrimSpace(code[max(lineStart, last):span.start]) != "" {
 			// the statement follows plpgsql code such as `then` or `return query` on
 			// its line, so it moves to its own line one level deeper
-			before = strings.TrimRight(before, " \t") + "\n" + lineIndent + indentUnit
-			margin = lineIndent + indentUnit
+			before = strings.TrimRight(before, " \t") + "\n" + lineIndent + unit
+			margin = lineIndent + unit
 		}
 		out.WriteString(before)
-		out.WriteString(formatEmbedded(code[span.start:span.end], margin))
+		out.WriteString(formatEmbedded(code[span.start:span.end], margin, opts))
 		last = span.end
 		// code after the statement on the same line, such as `end if;`, moves to its own line
 		rest := code[last:]
@@ -84,7 +90,7 @@ func formatPlpgsqlBody(body string) string {
 		}
 	}
 	out.WriteString(code[last:])
-	return reindentBody(lowercaseBody(tag + out.String() + tag))
+	return reindentBody(lowercaseBody(tag+out.String()+tag), unit)
 }
 
 // leadingSpace returns the spaces and tabs at the start of text
@@ -163,8 +169,8 @@ func statementEnd(tokens []*pg.ScanToken, from int) (int32, int) {
 // formatEmbedded formats one sql statement from plpgsql code, starting each
 // continuation line with margin. a statement that does not parse as sql, such
 // as plpgsql's `into strict`, is kept as written.
-func formatEmbedded(text, margin string) string {
-	result, err := formatSQL(text)
+func formatEmbedded(text, margin string, opts Options) string {
+	result, err := formatSQL(text, opts)
 	if err != nil {
 		return text
 	}

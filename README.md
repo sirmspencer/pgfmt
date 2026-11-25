@@ -54,6 +54,7 @@ pgfmt < query.sql                     # format stdin to stdout
 pgfmt query.sql                       # print the formatted file
 pgfmt -check $(git ls-files '*.sql')  # report problems, change nothing
 pgfmt -fix migrations/*.sql           # format and repair files in place
+pgfmt -config team.json query.sql     # use a specific settings file
 ```
 
 `-check` reports every problem it finds, one per line, without changing any file:
@@ -75,6 +76,32 @@ A stray comma is one that can only be extra: a trailing comma before a closing p
 | 2 | A syntax error that cannot be fixed, or a file could not be read | A syntax error that cannot be fixed, or a file could not be read or written |
 
 Statements that use syntax pgfmt does not lay out are reported on stderr in every mode. They do not affect the exit status.
+
+## Settings
+
+The defaults are the house style described in [rules.md](rules.md). A `.pgfmt.json` file in a repository changes individual settings for every file below it; settings the file does not mention keep their defaults:
+
+```json
+{
+  "indent": 2,
+  "clauseListLimit": 3,
+  "parenListLimit": 3,
+  "keepComments": false,
+  "align": true,
+  "blankLinesAroundSetOperators": true
+}
+```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `indent` | `2` | Spaces per indentation level, from 1 to 8 |
+| `clauseListLimit` | `3` | Most items `select`, `group by`, `order by`, and `returning` keep on the keyword's line; `0` always splits |
+| `parenListLimit` | `3` | Most items a parenthesized list, such as function arguments or an `in` list, keeps on one line; `0` always splits |
+| `keepComments` | `false` | Keep comments in place instead of removing them |
+| `align` | `true` | Align `create table` columns, `set` assignments, and select aliases |
+| `blankLinesAroundSetOperators` | `true` | Blank lines before and after `union`, `intersect`, and `except` |
+
+pgfmt uses the nearest `.pgfmt.json` in the formatted file's directory or a parent directory. Reading from stdin, it searches from the current directory, which the IntelliJ plugin sets to the file's directory. `pgfmt -config file` uses a specific file instead. An unknown setting or an invalid value is an error, so a misspelled setting is reported rather than ignored. [rules.md](rules.md#settings) shows each setting's effect.
 
 ## Editor setup
 

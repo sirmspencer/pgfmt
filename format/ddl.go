@@ -44,7 +44,7 @@ func (p *printer) createStmt(stmt *pg.CreateStmt) string {
 			fail("table element %T", node.Node)
 		}
 	}
-	return head + " (\n" + indent(alignedItems(rows)) + "\n)"
+	return head + " (\n" + p.indent(p.alignedItems(rows)) + "\n)"
 }
 
 func (p *printer) columnDef(col *pg.ColumnDef) string {
@@ -94,7 +94,7 @@ func (p *printer) constraint(con *pg.Constraint) string {
 		if len(con.Keys) == 0 {
 			return ""
 		}
-		return " " + nameList(con.Keys)
+		return " " + p.nameList(con.Keys)
 	}
 	switch con.Contype {
 	case pg.ConstrType_CONSTR_NULL:
@@ -118,11 +118,11 @@ func (p *printer) constraint(con *pg.Constraint) string {
 		text += keys()
 	case pg.ConstrType_CONSTR_FOREIGN:
 		if len(con.FkAttrs) > 0 {
-			text += "foreign key " + nameList(con.FkAttrs) + " "
+			text += "foreign key " + p.nameList(con.FkAttrs) + " "
 		}
 		text += "references " + p.rangeVar(con.Pktable)
 		if len(con.PkAttrs) > 0 {
-			text += " " + nameList(con.PkAttrs)
+			text += " " + p.nameList(con.PkAttrs)
 		}
 		switch con.FkMatchtype {
 		case "f":
@@ -203,7 +203,7 @@ func (p *printer) alterTableStmt(stmt *pg.AlterTableStmt) string {
 	if len(rows) == 1 {
 		return head + " " + joinCells(rows[0])
 	}
-	return head + "\n" + indent(alignedItems(rows))
+	return head + "\n" + p.indent(p.alignedItems(rows))
 }
 
 func (p *printer) alterTableCmd(cmd *pg.AlterTableCmd) string {
@@ -315,9 +315,9 @@ func (p *printer) indexStmt(stmt *pg.IndexStmt) string {
 	if stmt.AccessMethod != "btree" {
 		target += " using " + ident(stmt.AccessMethod)
 	}
-	target += " " + list("(", p.indexElems(stmt.IndexParams), ")")
+	target += " " + p.list("(", p.indexElems(stmt.IndexParams), ")")
 	if len(stmt.IndexIncludingParams) > 0 {
-		target += " include " + list("(", p.indexElems(stmt.IndexIncludingParams), ")")
+		target += " include " + p.list("(", p.indexElems(stmt.IndexIncludingParams), ")")
 	}
 	if stmt.NullsNotDistinct {
 		target += " nulls not distinct"
@@ -325,7 +325,7 @@ func (p *printer) indexStmt(stmt *pg.IndexStmt) string {
 	if stmt.WhereClause == nil {
 		return head + " " + target
 	}
-	return head + "\n" + indent(target+"\n"+markNode(stmt.WhereClause)+"where "+p.expr(stmt.WhereClause))
+	return head + "\n" + p.indent(target+"\n"+markNode(stmt.WhereClause)+"where "+p.expr(stmt.WhereClause))
 }
 
 func (p *printer) transactionStmt(stmt *pg.TransactionStmt) string {
@@ -387,9 +387,9 @@ func (p *printer) createFunctionStmt(stmt *pg.CreateFunctionStmt) string {
 		}
 		params[index] = text
 	}
-	lines := []string{head + list(qualifiedName(stmt.Funcname, funcIdent)+"(", params, ")")}
+	lines := []string{head + p.list(qualifiedName(stmt.Funcname, funcIdent)+"(", params, ")")}
 	if stmt.ReturnType != nil {
-		lines = append(lines, indentUnit+"returns "+p.typeName(stmt.ReturnType))
+		lines = append(lines, p.unit()+"returns "+p.typeName(stmt.ReturnType))
 	}
 	language := ""
 	for _, node := range stmt.Options {
@@ -406,7 +406,7 @@ func (p *printer) createFunctionStmt(stmt *pg.CreateFunctionStmt) string {
 			body = p.functionOption(opt, language)
 			continue
 		}
-		lines = append(lines, indentUnit+p.functionOption(opt, language))
+		lines = append(lines, p.unit()+p.functionOption(opt, language))
 	}
 	if body != "" {
 		lines = append(lines, body)
@@ -452,9 +452,9 @@ func (p *printer) functionOption(opt *pg.DefElem, language string) string {
 		// sql and plpgsql fold case like sql does; other languages such as plpython must stay as written
 		switch language {
 		case "sql":
-			body = formatSQLBody(body)
+			body = formatSQLBody(body, p.opts)
 		case "plpgsql":
-			body = formatPlpgsqlBody(body)
+			body = formatPlpgsqlBody(body, p.opts)
 		}
 		return "as " + strings.ReplaceAll(body, "\n", literalNewline)
 	case "language":
@@ -499,7 +499,7 @@ func (p *printer) viewStmt(stmt *pg.ViewStmt) string {
 	}
 	head += persistence(stmt.View) + "view " + p.rangeVar(stmt.View)
 	if len(stmt.Aliases) > 0 {
-		head += " " + nameList(stmt.Aliases)
+		head += " " + p.nameList(stmt.Aliases)
 	}
 	return mark(stmt.View.Location) + head + " as\n" + p.statement(stmt.Query)
 }
@@ -541,8 +541,8 @@ func (p *printer) dropStmt(stmt *pg.DropStmt) string {
 			fail("drop object %T", node.Node)
 		}
 	}
-	if len(names) > maxInlineItems {
-		return text + "\n" + indent(joinItems(names)) + behavior(stmt.Behavior)
+	if len(names) > p.opts.ParenListLimit {
+		return text + "\n" + p.indent(joinItems(names)) + behavior(stmt.Behavior)
 	}
 	return text + " " + strings.Join(names, ", ") + behavior(stmt.Behavior)
 }

@@ -2,7 +2,7 @@
 
 # pgfmt Formatting Rules
 
-This document lists the formatting rules pgfmt applies. Each rule shows input and the output pgfmt produces, and names the test case in `testdata/cases` that enforces it. Every example in this file is checked against the formatter.
+This document lists the formatting rules pgfmt applies with its default settings; [settings](#settings) describes the ones a `.pgfmt.json` file can change. Each rule shows input and the output pgfmt produces, and names the test case in `testdata/cases` that enforces it. Every example in this file is checked against the formatter.
 
 ## Comparison with other formatters
 
@@ -1097,4 +1097,94 @@ SELECT id FROM users
 ```sql
 SELECT a FROM t;
 VACUUM   ANALYZE   Users , Orders ;
+```
+
+---
+
+## Settings
+
+The rules above are the defaults. A `.pgfmt.json` file changes individual settings; settings it does not mention keep their defaults. pgfmt uses the nearest `.pgfmt.json` in the formatted file's directory or a parent directory, or, for stdin, in the current directory or a parent. `pgfmt -config file` uses a specific file instead. An unknown setting or an invalid value is an error.
+
+The default settings:
+
+```json
+{
+  "indent": 2,
+  "clauseListLimit": 3,
+  "parenListLimit": 3,
+  "keepComments": false,
+  "align": true,
+  "blankLinesAroundSetOperators": true
+}
+```
+
+### indent
+
+**The number of spaces per indentation level,** from 1 to 8. It applies everywhere, including inside function bodies. Default `2`.
+
+```sql {"indent": 4}
+select id, email, name, created_at from users where active = true and id = :id;
+```
+
+### clauseListLimit
+
+**The most items `select`, `group by`, `order by`, and `returning` keep on the keyword's line.** `0` always splits, even a single item. It does not affect parenthesized lists. Default `3`.
+
+```sql {"clauseListLimit": 1}
+select id, email from users order by id, email;
+```
+
+```sql {"clauseListLimit": 0}
+select id from users order by id;
+```
+
+```sql {"clauseListLimit": 5}
+select id, email, name, region, created_at from users;
+```
+
+### parenListLimit
+
+**The most items a parenthesized list keeps on one line:** function arguments and parameters, `in (...)` lists, `insert` columns and rows, and the other lists in [lists](#lists). `0` always splits a list with at least one item; an empty list such as `now()` stays as it is. It does not affect `select` lists. Default `3`.
+
+```sql {"parenListLimit": 6}
+select make_timestamp(:year, :month, :day, 0, 0, 0) where id in (1, 2, 3, 4);
+```
+
+```sql {"parenListLimit": 1}
+select coalesce(a, b) from t;
+```
+
+```sql {"parenListLimit": 0}
+select lower(email), now() from users where id in (:id);
+```
+
+### keepComments
+
+**Keep comments in place instead of removing them.** Comments stay next to the code they were written beside, and a select list with a comment between items is split one item per line so the comment keeps its place. Default `false`.
+
+```sql {"keepComments": true}
+-- leading comment for the query
+select id, -- primary key
+  email
+from users; -- trailing
+```
+
+### align
+
+**Align `create table` columns, `set` assignments, and select aliases into columns,** as described in [alignment](#alignment). With `false`, one space separates a name from what follows it everywhere. Default `true`.
+
+```sql {"align": false}
+update rate_limits set max_requests_per_minute = :max-requests-per-minute, burst = :burst where id = :id;
+```
+
+```sql {"align": false}
+create table rate_limits (id bigserial primary key, max_requests_per_minute integer not null, burst integer not null default 10);
+```
+
+### blankLinesAroundSetOperators
+
+**Put a blank line before and after `union`, `intersect`, and `except`.** Default `true`.
+
+```sql {"blankLinesAroundSetOperators": false}
+select id from users union all select id from archived_users;
 ```
