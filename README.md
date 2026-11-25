@@ -27,6 +27,8 @@ The style is defined by the input and expected pairs in `testdata/cases` and doc
 
 ## Installation
 
+The editor plugins bundle pgfmt, so an editor needs nothing else. The command line, CI, and other editors use one of these:
+
 ### Homebrew
 
 ```sh
@@ -35,7 +37,18 @@ brew trust sirmspencer/tap
 brew install pgfmt
 ```
 
-The formula builds from source, so the first install takes a minute or two while the PostgreSQL parser compiles.
+### npm
+
+```sh
+npm install --save-dev pgfmt
+npx pgfmt -check $(git ls-files '*.sql')
+```
+
+npm installs only the binary for the current platform.
+
+### Binaries
+
+Every [release](https://github.com/sirmspencer/pgfmt/releases) has archives for macOS (Apple silicon and Intel), Linux (x64 and ARM), and Windows (x64), with a `checksums.txt`.
 
 ### Go
 
@@ -109,23 +122,18 @@ Each editor runs pgfmt on the buffer through stdin and replaces the buffer with 
 
 ### VS Code
 
-A dedicated pgfmt extension is planned under `editors/vscode`. Until it is published, pgfmt runs through [Custom Local Formatters](https://marketplace.visualstudio.com/items?itemName=jkillian.custom-local-formatters) (`jkillian.custom-local-formatters`), a third-party extension that registers any command-line program as a VS Code formatter. It sends the document to the command's stdin and replaces the document with the command's stdout, which is how pgfmt already works.
-
-Install the extension, then add to `settings.json`:
+Install **pgfmt** (`sirmspencer.pgfmt`) from the Visual Studio Marketplace or Open VSX, then make it the SQL formatter:
 
 ```json
 {
-  "customLocalFormatters.formatters": [
-    { "command": "pgfmt", "languages": ["sql"] }
-  ],
   "[sql]": {
-    "editor.defaultFormatter": "jkillian.custom-local-formatters",
+    "editor.defaultFormatter": "sirmspencer.pgfmt",
     "editor.formatOnSave": true
   }
 }
 ```
 
-When the pgfmt extension is published, it replaces this setup.
+The extension bundles pgfmt. The `pgfmt.path` setting points it at another build, such as one from `./bin/link`.
 
 ### Neovim
 
@@ -145,14 +153,7 @@ require("conform").setup({
 
 ### IntelliJ
 
-Add a File Watcher under Settings, Tools, File Watchers, with these values:
-
-- File type: SQL
-- Program: `pgfmt`
-- Arguments: `-fix $FilePath$`
-- Output paths to refresh: `$FilePath$`
-
-Disable the built-in SQL code style reformatting on save, so that the two formatters do not conflict.
+Install **pgfmt** from the JetBrains Marketplace (Settings, Plugins). It replaces the built-in SQL formatter for Reformat Code, reformat on save, and reformat on commit. It works in IntelliJ IDEA, DataGrip, and the other JetBrains IDEs, including Community editions. The plugin bundles pgfmt; Settings, Tools, pgfmt points it at another build.
 
 ### Emacs
 
@@ -184,11 +185,24 @@ go test ./...
 ./bin/unlink   # remove the dev build and restore the homebrew version
 ```
 
-Editor plugins run whichever `pgfmt` is on the path, so `./bin/link` is how a local change is tested in an editor.
+The editor plugins use their bundled pgfmt. To test a local change in an editor, run `./bin/link` and set the plugin's pgfmt path (`pgfmt.path` in VS Code, Settings, Tools, pgfmt in IntelliJ) to the linked binary.
 
 Each directory in `testdata/cases` contains an `input.sql` and the `expected.sql` it must format to. The tests also check that formatting `expected.sql` leaves it unchanged and that no comments remain.
 
 `rules.md` is generated. Edit `docs/rules.template.md`, which contains each rule and its input examples, then run `go run ./tools/rules` to write `rules.md` with the formatter's output below every example. `go test ./...` fails if `rules.md` is out of date.
+
+## Releasing
+
+Pushing a version tag releases every package:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The `release` workflow tests and builds pgfmt on macOS, Linux, and Windows, creates the GitHub release with the archives and `checksums.txt`, publishes the npm packages, and publishes the VS Code extension to the Visual Studio Marketplace and Open VSX. It also builds the IntelliJ plugin and attaches it to the release; the plugin is published to the JetBrains Marketplace once the repository variable `JETBRAINS_PUBLISH` is `true`, which can be set after the first version is uploaded and approved by hand. The secrets it uses are `NPM_TOKEN`, `VSCE_PAT`, `OVSX_PAT`, and `JETBRAINS_MARKETPLACE_TOKEN`.
+
+After a release, `scripts/update-formula.sh <version> <tap>/pgfmt.rb` writes the Homebrew formula from the release checksums.
 
 ## License
 

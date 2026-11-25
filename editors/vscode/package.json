@@ -1,0 +1,57 @@
+{
+  "name": "pgfmt",
+  "displayName": "pgfmt",
+  "description": "Format PostgreSQL files with pgfmt",
+  "version": "0.1.0",
+  "publisher": "sirmspencer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sirmspencer/pgfmt"
+  },
+  "homepage": "https://github.com/sirmspencer/pgfmt",
+  "bugs": {
+    "url": "https://github.com/sirmspencer/pgfmt/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Formatters"
+  ],
+  "keywords": [
+    "sql",
+    "postgresql",
+    "postgres",
+    "formatter"
+  ],
+  "activationEvents": [
+    "onLanguage:sql"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "pgfmt",
+      "properties": {
+        "pgfmt.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a pgfmt executable. Leave empty to use the one bundled with the extension."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
+    "build:test": "esbuild src/test/run.ts src/test/suite.ts --bundle --platform=node --format=cjs --external:vscode --external:@vscode/test-electron --outdir=dist/test",
+    "test": "npm run build && npm run build:test && node dist/test/run.js",
+    "package": "npm run build && vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

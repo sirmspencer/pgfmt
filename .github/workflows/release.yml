@@ -57,3 +57,95 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes
+
+  npm:
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: package
+        run: scripts/package-npm.sh "${GITHUB_REF_NAME}" dist
+      - name: publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # platform packages first, so the pgfmt package never points at a missing version
+          for dir in dist/npm/pgfmt-*; do
+            npm publish "$dir" --access public --provenance
+          done
+          npm publish dist/npm/pgfmt --access public --provenance
+
+  vscode:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install
+        run: npm ci --prefix editors/vscode
+      - name: package
+        run: scripts/package-vscode.sh "${GITHUB_REF_NAME}" dist
+      - name: attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/*.vsix --repo "${GITHUB_REPOSITORY}" --clobber
+      - name: publish to the vs code marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          for vsix in "$PWD"/dist/*.vsix; do
+            (cd editors/vscode && npx vsce publish --packagePath "$vsix")
+          done
+      - name: publish to open vsx
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          npx --yes ovsx create-namespace sirmspencer -p "$OVSX_PAT" || true
+          for vsix in dist/*.vsix; do
+            npx --yes ovsx publish "$vsix" -p "$OVSX_PAT"
+          done
+
+  jetbrains:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: package
+        run: scripts/package-intellij.sh "${GITHUB_REF_NAME}" dist
+      - name: attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/pgfmt-intellij-*.zip --repo "${GITHUB_REPOSITORY}" --clobber
+      # the first version of a plugin must be uploaded by hand on plugins.jetbrains.com;
+      # set the repository variable JETBRAINS_PUBLISH to true once it is approved
+      - name: publish to the jetbrains marketplace
+        if: vars.JETBRAINS_PUBLISH == 'true'
+        env:
+          PUBLISH_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+        working-directory: editors/intellij
+        run: ./gradlew publishPlugin -PpluginVersion="${GITHUB_REF_NAME#v}" --console=plain

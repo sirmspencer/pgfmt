@@ -24,6 +24,10 @@ intellijPlatform {
             untilBuild = provider { null }
         }
     }
+    // ./gradlew publishPlugin reads the marketplace token from PUBLISH_TOKEN
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
+    }
     pluginVerification {
         ides {
             // the installed ides, so verification does not download others
@@ -38,6 +42,15 @@ intellijPlatformTesting {
         // ./gradlew runDataGrip checks that pgfmt replaces the built-in sql formatter
         register("runDataGrip") {
             localPath = file("/Applications/DataGrip.app")
+        }
+    }
+}
+
+tasks {
+    // bin/<os>-<arch>/pgfmt binaries, filled by scripts/package-intellij.sh, ship inside the plugin
+    prepareSandbox {
+        from(layout.projectDirectory.dir("bin")) {
+            into(intellijPlatform.projectName.map { "$it/bin" })
         }
     }
 }
