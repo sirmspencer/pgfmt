@@ -436,6 +436,31 @@ func (p *printer) sqlSyntaxCall(call *pg.FuncCall) (string, int) {
 			fail("extract field")
 		}
 		return "extract(" + field.Sval + " from " + p.expr(call.Args[1]) + ")", precAtom
+	case name == "btrim" || name == "ltrim" || name == "rtrim":
+		// trim([both | leading | trailing] [characters] from text), stored as btrim(text, characters)
+		side := map[string]string{"btrim": "", "ltrim": "leading ", "rtrim": "trailing "}[name]
+		switch len(call.Args) {
+		case 1:
+			if side == "" {
+				return "trim(" + p.expr(call.Args[0]) + ")", precAtom
+			}
+			return "trim(" + side + "from " + p.expr(call.Args[0]) + ")", precAtom
+		case 2:
+			if side == "" {
+				side = "both "
+			}
+			return "trim(" + side + p.expr(call.Args[1]) + " from " + p.expr(call.Args[0]) + ")", precAtom
+		}
+	case name == "substring" && (len(call.Args) == 2 || len(call.Args) == 3):
+		// substring(text from start [for count])
+		text := "substring(" + p.expr(call.Args[0]) + " from " + p.expr(call.Args[1])
+		if len(call.Args) == 3 {
+			text += " for " + p.expr(call.Args[2])
+		}
+		return text + ")", precAtom
+	case name == "position" && len(call.Args) == 2:
+		// position(needle in haystack), stored as position(haystack, needle)
+		return "position(" + p.operand(call.Args[1], precLike+1) + " in " + p.operand(call.Args[0], precLike+1) + ")", precAtom
 	}
 	fail("sql syntax function %s", name)
 	return "", 0

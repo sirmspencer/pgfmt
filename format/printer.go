@@ -125,10 +125,17 @@ func joinItems(items []string) string {
 }
 
 // list prints a parenthesized list on one line when it has at most
-// maxInlineItems items, and one item per line otherwise
+// maxInlineItems single-line items, and one item per line otherwise
 // learn: open and close are passed in so one helper serves "name(" ")", "in (" ")", and "array[" "]".
 func list(open string, items []string, close string) string {
-	if len(items) <= maxInlineItems {
+	multiline := false
+	for _, item := range items {
+		if strings.Contains(item, "\n") {
+			multiline = true
+		}
+	}
+	// a short list stays on one line unless an item already spans several lines
+	if len(items) <= maxInlineItems && !multiline {
 		return open + strings.Join(items, ", ") + close
 	}
 	return open + "\n" + indent(joinItems(items)) + "\n" + close
@@ -314,11 +321,18 @@ func (p *printer) selectList(stmt *pg.SelectStmt) string {
 	if len(stmt.TargetList) == 0 {
 		return keyword
 	}
-	if p.inlineItems(stmt.TargetList, p.targets(stmt.TargetList)) {
-		return keyword + " " + strings.Join(p.targets(stmt.TargetList), ", ")
+	// print the targets once: a target can hold a subquery, and printing it
+	// again at every level would make deep nesting exponentially slow
+	rows := p.targetCells(stmt.TargetList)
+	items := make([]string, len(rows))
+	for index, row := range rows {
+		items[index] = joinCells(row)
+	}
+	if p.inlineItems(stmt.TargetList, items) {
+		return keyword + " " + strings.Join(items, ", ")
 	}
 	// aliases line up when the list is split across lines
-	return p.alignedClause(keyword, p.targetCells(stmt.TargetList))
+	return p.alignedClause(keyword, rows)
 }
 
 // shortClause prints select, group by, and order by: on the keyword's line

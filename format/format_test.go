@@ -6,8 +6,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	pg "github.com/pganalyze/pg_query_go/v6"
 )
@@ -114,6 +116,8 @@ func TestPlaceholders(t *testing.T) {
 	tests := []struct{ name, input, want string }{
 		{"cast after placeholder", "select :id::int", "select :id::integer\n"},
 		{"kebab case", "select * from t where a = :user-id", "select *\nfrom t\nwhere a = :user-id\n"},
+		{"snake case", "select :example_key, :example_key::int, :example_key_2 from t", "select :example_key, :example_key::integer, :example_key_2\nfrom t\n"},
+		{"snake case in a list", "select * from t where id in (:example_keys)", "select *\nfrom t\nwhere id in (:example_keys)\n"},
 		{"kebab case with a number", "select :address-2", "select :address-2\n"},
 		{"minus needs spaces", "select :limit - 1", "select :limit - 1\n"},
 		{"inside a string", "select ':not_a_param'", "select ':not_a_param'\n"},
@@ -329,6 +333,8 @@ func TestPlaceholderReadings(t *testing.T) {
 		{"fragment after a name", "select * from t where active :more", "select *\nfrom t\nwhere active :more\n"},
 		{"fragment at the end", "select * from t :where-clause", "select *\nfrom t :where-clause\n"},
 		{"name", "select * from :table-name", "select *\nfrom :table-name\n"},
+		{"snake case fragment", "select * from t\nwhere a = :example_key\n:example_filter_clause", "select *\nfrom t\nwhere a = :example_key\n:example_filter_clause\n"},
+		{"snake case name", "select * from :example_table", "select *\nfrom :example_table\n"},
 		{"typed literal on a built-in type stays a value", "select date :day", "select :day::date\n"},
 		{"clojure keyword characters", "select * from t where a = :ok? and b = :force!", "select *\nfrom t\nwhere\n  a = :ok?\n  and b = :force!\n"},
 	}
@@ -400,4 +406,61 @@ func TestCommentsAreRemoved(t *testing.T) {
 			assertOutput(t, formatOrFail(t, test.input).Output, test.want)
 		})
 	}
+}
+
+// nest builds depth levels of a pattern, where %s marks where the next level goes
+func nest(pattern, innermost string, depth int) string {
+	text := innermost
+	for level := 0; level < depth; level++ {
+		text = strings.ReplaceAll(pattern, "%d", strconv.Itoa(level))
+		text = strings.Replace(text, "%s", innermost, 1)
+		innermost = text
+	}
+	return text
+}
+
+// very deep structures format without being skipped, keep their meaning
+// (checked by the formatter itself), and format the same way twice
+func TestDeepNesting(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{"scalar subqueries", "select " + nest("(select %s from t%d)", "1", 30)},
+		{"subqueries in from", "select * from " + nest("(select * from %s) as s%d", "base", 30)},
+		{"in subqueries", "select id from t where id in " + nest("(select id from t%d where id in %s)", "(1, 2)", 25)},
+		{"boolean groups", "select 1 from t where " + nest("a%d = %d and (b%d = %d or (%s))", "c = 0", 30)},
+		{"function calls", "select " + nest("f%d(%s)", "x", 40)},
+		{"arithmetic", "select " + nest("((%s + a%d) * 2)", "1", 40)},
+		{"case expressions", "select " + nest("case when a%d then %s else %d end", "0", 20)},
+		{"ctes in subqueries", "select * from " + nest("(with c%d as (select * from %s) select * from c%d) as s%d", "base", 12)},
+		{"long lists inside lists", "select " + nest("coalesce(a%d, b%d, c%d, %s)", "d", 15)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// work that repeats at every level grows exponentially, so a slow run means a regression
+			started := time.Now()
+			result := formatOrFail(t, test.sql)
+			if elapsed := time.Since(started); elapsed > 2*time.Second {
+				t.Errorf("formatting took %s", elapsed)
+			}
+			for _, skipped := range result.Skipped {
+				t.Fatalf("left unformatted: %s", skipped.Reason)
+			}
+			again := formatOrFail(t, result.Output)
+			if again.Output != result.Output {
+				t.Errorf("formatting twice changed the output")
+			}
+		})
+	}
+}
+
+func TestSQLSyntaxFunctions(t *testing.T) {
+	input := "select trim(a), trim(both 'x' from a), trim(leading from a), substring(a from 2 for 3), position('b' in a) from t"
+	want := "select\n  trim(a),\n  trim(both 'x' from a),\n  trim(leading from a),\n  substring(a from 2 for 3),\n  position('b' in a)\nfrom t\n"
+	result := formatOrFail(t, input)
+	if len(result.Skipped) > 0 {
+		t.Errorf("skipped: %+v", result.Skipped)
+	}
+	assertOutput(t, result.Output, want)
 }
