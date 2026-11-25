@@ -11,6 +11,11 @@ import java.nio.charset.StandardCharsets
 
 private const val TIMEOUT_MS = 30_000
 
+/** true for the files pgfmt formats: .sql files while the plugin is enabled */
+fun formatsWithPgfmt(file: PsiFile?): Boolean =
+    PgfmtSettings.getInstance().state.enabled &&
+        file?.virtualFile?.extension.equals("sql", ignoreCase = true)
+
 /**
  * Formats .sql files by piping the document through the pgfmt executable.
  *
@@ -25,9 +30,7 @@ class PgfmtFormattingService : AsyncDocumentFormattingService() {
     // typing and paste stay with the built-in formatter instead of starting a process.
     override fun getFeatures(): Set<FormattingService.Feature> = emptySet()
 
-    override fun canFormat(file: PsiFile): Boolean =
-        PgfmtSettings.getInstance().state.enabled &&
-            file.virtualFile?.extension.equals("sql", ignoreCase = true)
+    override fun canFormat(file: PsiFile): Boolean = formatsWithPgfmt(file)
 
     override fun getNotificationGroupId(): String = "pgfmt"
 

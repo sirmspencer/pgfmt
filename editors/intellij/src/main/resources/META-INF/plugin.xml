@@ -19,6 +19,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <formattingService implementation="io.github.sirmspencer.pgfmt.PgfmtFormattingService"/>
+        <lang.formatter.syntaxErrorsVerifier implementation="io.github.sirmspencer.pgfmt.PgfmtSyntaxErrorsVerifier"/>
         <applicationConfigurable parentId="tools"
                                  instance="io.github.sirmspencer.pgfmt.PgfmtConfigurable"
                                  id="io.github.sirmspencer.pgfmt"
