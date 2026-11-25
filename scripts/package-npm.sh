@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # builds the npm packages from the release archives in a dist folder: one
-# package per platform holding its binary, and the pgfmt package that installs
-# the matching one and runs it. output goes to <dist-dir>/npm/<package>.
+# package per platform holding its binary, and the @sirmspencer/pgfmt package
+# that installs the matching one and runs it. npm rejects the unscoped name pgfmt
+# as too similar to an existing package, so every package is scoped. output goes to <dist-dir>/npm/<package>.
 # usage: scripts/package-npm.sh <version> <dist-dir>
 set -euo pipefail
 
@@ -53,7 +54,7 @@ cp -R "$root/npm/pgfmt/." "$dir"
 cp "$root/LICENSE" "$root/README.md" "$dir/"
 cat > "$dir/package.json" <<JSON
 {
-  "name": "pgfmt",
+  "name": "@sirmspencer/pgfmt",
   "version": "$version",
   "description": "Formatter for PostgreSQL sql files",
   "license": "MIT",

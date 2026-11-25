@@ -80,11 +80,17 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # platform packages first, so the pgfmt package never points at a missing version
-          for dir in dist/npm/pgfmt-*; do
+          # platform packages first, so the main package never points at a missing
+          # version; versions already published, as in a rerun, are skipped
+          for dir in dist/npm/pgfmt-* dist/npm/pgfmt; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            version="$(node -p "require('./$dir/package.json').version")"
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already published"
+              continue
+            fi
             npm publish "$dir" --access public --provenance
           done
-          npm publish dist/npm/pgfmt --access public --provenance
 
   vscode:
     needs: release

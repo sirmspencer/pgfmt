@@ -40,11 +40,11 @@ brew install pgfmt
 ### npm
 
 ```sh
-npm install --save-dev pgfmt
+npm install --save-dev @sirmspencer/pgfmt
 npx pgfmt -check $(git ls-files '*.sql')
 ```
 
-npm installs only the binary for the current platform.
+The package installs the `pgfmt` command and only the binary for the current platform. Without installing it, `npx @sirmspencer/pgfmt` runs it once.
 
 ### Binaries
 
