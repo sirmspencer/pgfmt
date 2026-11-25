@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# stores the release workflow's secrets in the github repository from
+# environment variables. values are piped to gh on stdin, so they never appear
+# in the process list or in the output. variables that are not set are skipped.
+#
+# usage:
+#   TAP_TOKEN=... NPM_TOKEN=... scripts/set-secrets.sh [owner/repo]
+#
+# run it from a shell where the variables are already exported, for example
+# after `source` of a private file outside the repository, rather than typing
+# the values on the command line, where they would land in shell history.
+set -euo pipefail
+
+repo="${1:-sirmspencer/pgfmt}"
+secrets="TAP_TOKEN NPM_TOKEN VSCE_PAT OVSX_PAT JETBRAINS_MARKETPLACE_TOKEN"
+
+if ! gh auth status >/dev/null 2>&1; then
+  echo "gh is not signed in; run gh auth login first" >&2
+  exit 1
+fi
+
+set_count=0
+for name in $secrets; do
+  value="${!name:-}"
+  if [ -z "$value" ]; then
+    echo "skipped $name: not set"
+    continue
+  fi
+  printf '%s' "$value" | gh secret set "$name" --repo "$repo"
+  set_count=$((set_count + 1))
+done
+
+# JETBRAINS_PUBLISH is a repository variable, not a secret: set it to true
+# once the first plugin version has been approved on the marketplace
+if [ -n "${JETBRAINS_PUBLISH:-}" ]; then
+  gh variable set JETBRAINS_PUBLISH --repo "$repo" --body "$JETBRAINS_PUBLISH"
+  echo "set variable JETBRAINS_PUBLISH=$JETBRAINS_PUBLISH"
+fi
+
+echo "set $set_count secrets on $repo"
+gh secret list --repo "$repo"

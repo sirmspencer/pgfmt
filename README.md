@@ -198,7 +198,7 @@ Each directory in `testdata/cases` contains an `input.sql` and the `expected.sql
 
 ## Releasing
 
-Pushing a version tag releases every package:
+[docs/releasing.md](docs/releasing.md) describes the accounts, tokens, and one-time steps behind the release workflow. Pushing a version tag releases every package:
 
 ```sh
 git tag v0.1.0
