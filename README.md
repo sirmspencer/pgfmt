@@ -205,9 +205,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The `release` workflow tests and builds pgfmt on macOS, Linux, and Windows, creates the GitHub release with the archives and `checksums.txt`, publishes the npm packages, and publishes the VS Code extension to the Visual Studio Marketplace and Open VSX. It also builds the IntelliJ plugin and attaches it to the release; the plugin is published to the JetBrains Marketplace once the repository variable `JETBRAINS_PUBLISH` is `true`, which can be set after the first version is uploaded and approved by hand. The secrets it uses are `NPM_TOKEN`, `VSCE_PAT`, `OVSX_PAT`, and `JETBRAINS_MARKETPLACE_TOKEN`.
+The `release` workflow tests and builds pgfmt on macOS, Linux, and Windows, creates the GitHub release with the archives and `checksums.txt`, publishes the npm packages, and publishes the VS Code extension to the Visual Studio Marketplace and Open VSX. It also builds the IntelliJ plugin and attaches it to the release; the plugin is published to the JetBrains Marketplace once the repository variable `JETBRAINS_PUBLISH` is `true`, which can be set after the first version is uploaded and approved by hand. The secrets it uses are `TAP_TOKEN`, `NPM_TOKEN`, `VSCE_PAT`, `OVSX_PAT`, and `JETBRAINS_MARKETPLACE_TOKEN`.
 
-After a release, `scripts/update-formula.sh <version> <tap>/pgfmt.rb` writes the Homebrew formula from the release checksums.
+It also updates the Homebrew formula in `sirmspencer/homebrew-tap` from the release checksums, after installing and testing it on macOS. `scripts/update-formula.sh <version> <tap>/pgfmt.rb` does the same by hand.
 
 ## License
 
