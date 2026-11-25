@@ -7,8 +7,9 @@
     <p>Formats PostgreSQL <code>.sql</code> files with <a href="https://github.com/sirmspencer/pgfmt">pgfmt</a>,
     so that every editor on a team produces the same output.</p>
     <p>Reformat Code, reformat on save, and reformat on commit run pgfmt in place of the built-in SQL
-    formatter. pgfmt preserves comments and <code>:name</code> placeholders, and leaves any statement it
-    cannot format exactly as written.</p>
+    formatter. pgfmt keeps <code>:name</code> placeholders, removes stray commas, checks that every
+    statement means the same after formatting, and leaves any statement it cannot format exactly as
+    written. A <code>.pgfmt.json</code> file in the project changes its settings.</p>
     <p>The plugin requires the pgfmt executable, available through Homebrew:
     <code>brew tap sirmspencer/tap &amp;&amp; brew install pgfmt</code>. Its location can be set under
     Settings | Tools | pgfmt.</p>

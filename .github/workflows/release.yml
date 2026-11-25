@@ -1,0 +1,59 @@
+# builds pgfmt on every platform it ships to, after running the tests there.
+# a v* tag also publishes a github release with the archives and checksums.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            targets: darwin-arm64 darwin-amd64
+          - runner: ubuntu-24.04
+            targets: linux-amd64
+          - runner: ubuntu-24.04-arm
+            targets: linux-arm64
+          - runner: windows-latest
+            targets: windows-amd64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: test
+        run: go test ./...
+      - name: build
+        run: scripts/build.sh "${GITHUB_REF_NAME}" ${{ matrix.targets }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pgfmt-${{ matrix.runner }}
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: checksums
+        run: cd dist && sha256sum * > checksums.txt
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes

@@ -189,3 +189,7 @@ Editor plugins run whichever `pgfmt` is on the path, so `./bin/link` is how a lo
 Each directory in `testdata/cases` contains an `input.sql` and the `expected.sql` it must format to. The tests also check that formatting `expected.sql` leaves it unchanged and that no comments remain.
 
 `rules.md` is generated. Edit `docs/rules.template.md`, which contains each rule and its input examples, then run `go run ./tools/rules` to write `rules.md` with the formatter's output below every example. `go test ./...` fails if `rules.md` is out of date.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
