@@ -43,20 +43,25 @@ Most of these tokens expire. When one does, the job that uses it fails, and a ne
 
 ### Setting the secrets with a script
 
-`scripts/set-secrets.sh` stores every secret whose environment variable is set and skips the rest. It pipes each value to `gh` on stdin, so values do not appear in the process list or the output.
+`scripts/set-secrets.sh` stores every `NAME=value` line of a file as a repository secret, from `.envrc` at the repository root by default. `.envrc` is in `.gitignore`. The script uses only the values in the file, skips empty values, and pipes each value to `gh` on stdin, so values do not appear in the process list or the output. Lines work with or without `export`, and direnv is not needed.
 
 ```sh
-# a private file outside the repository, for example ~/.pgfmt-release.env:
-#   export TAP_TOKEN=...
-#   export NPM_TOKEN=...
-#   export VSCE_PAT=...
-#   export OVSX_PAT=...
-#   export JETBRAINS_MARKETPLACE_TOKEN=...
-source ~/.pgfmt-release.env
-scripts/set-secrets.sh
+# .envrc
+TAP_TOKEN=...
+NPM_TOKEN=...
+VSCE_PAT=...
+OVSX_PAT=...
+JETBRAINS_MARKETPLACE_TOKEN=...
 ```
 
-The script also sets the repository variable `JETBRAINS_PUBLISH` when that environment variable is set. `gh` must be signed in as an account with admin access to the repository.
+```sh
+scripts/set-secrets.sh                      # reads .envrc
+scripts/set-secrets.sh ~/pgfmt-secrets.env  # reads another file
+```
+
+Existing secrets are replaced, so updating one token means changing its line and running the script again. The script never prints a value; it prints the first 8 characters of each value's SHA-256 hash instead, to confirm which token was stored. To compare, copy the intended token and run `pbpaste | shasum -a 256 | cut -c1-8` on macOS, which keeps the token out of the shell history.
+
+The script stores whatever the file contains. If a secret is changed on GitHub directly, the file needs the same change, or the next run of the script replaces the secret with the old value. A `JETBRAINS_PUBLISH` line is stored as a repository variable instead of a secret. `gh` must be signed in as an account with admin access to the repository.
 
 ## One-time steps
 
@@ -91,7 +96,7 @@ Running the workflow by hand from the Actions tab runs only the build job, which
 | `scripts/package-vscode.sh <version> <dist>` | builds one VS Code package per platform |
 | `scripts/package-intellij.sh <version> <dist>` | builds the IntelliJ plugin with every binary |
 | `scripts/update-formula.sh <version> <formula>` | writes the Homebrew formula from a release's checksums |
-| `scripts/set-secrets.sh [owner/repo]` | stores the release secrets from environment variables |
+| `scripts/set-secrets.sh [file] [owner/repo]` | stores the release secrets from `.envrc` or another file |
 
 ## Known issues
 

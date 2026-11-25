@@ -1,41 +1,67 @@
 #!/usr/bin/env bash
-# stores the release workflow's secrets in the github repository from
-# environment variables. values are piped to gh on stdin, so they never appear
-# in the process list or in the output. variables that are not set are skipped.
+# stores every NAME=value line of a file as a github repository secret, from
+# .envrc at the repository root by default. JETBRAINS_PUBLISH is stored as a
+# repository variable instead, since it is a setting rather than a secret.
+# values are piped to gh on stdin, so they never appear in the process list or
+# the output.
 #
-# usage:
-#   TAP_TOKEN=... NPM_TOKEN=... scripts/set-secrets.sh [owner/repo]
-#
-# run it from a shell where the variables are already exported, for example
-# after `source` of a private file outside the repository, rather than typing
-# the values on the command line, where they would land in shell history.
+# usage: scripts/set-secrets.sh [file] [owner/repo]
 set -euo pipefail
 
-repo="${1:-sirmspencer/pgfmt}"
-secrets="TAP_TOKEN NPM_TOKEN VSCE_PAT OVSX_PAT JETBRAINS_MARKETPLACE_TOKEN"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+file="${1:-$root/.envrc}"
+repo="${2:-sirmspencer/pgfmt}"
 
+if [ ! -f "$file" ]; then
+  echo "no secrets file at $file" >&2
+  exit 1
+fi
 if ! gh auth status >/dev/null 2>&1; then
   echo "gh is not signed in; run gh auth login first" >&2
   exit 1
 fi
 
-set_count=0
-for name in $secrets; do
+# the names assigned in the file, with or without export
+names="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$file" | sort -u)"
+if [ -z "$names" ]; then
+  echo "no NAME=value lines in $file" >&2
+  exit 1
+fi
+
+# load the values from the file alone, ignoring anything already in the environment
+# shellcheck disable=SC2086
+unset $names
+set -a
+# shellcheck source=/dev/null
+source "$file"
+set +a
+
+# the first 8 characters of a value's sha-256, enough to tell two tokens apart
+# without showing either one
+fingerprint() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | cut -c1-8
+  else
+    printf '%s' "$1" | shasum -a 256 | cut -c1-8
+  fi
+}
+
+count=0
+for name in $names; do
   value="${!name:-}"
   if [ -z "$value" ]; then
-    echo "skipped $name: not set"
+    echo "skipped $name: empty"
+    continue
+  fi
+  if [ "$name" = "JETBRAINS_PUBLISH" ]; then
+    gh variable set "$name" --repo "$repo" --body "$value"
+    echo "set variable $name=$value"
     continue
   fi
   printf '%s' "$value" | gh secret set "$name" --repo "$repo"
-  set_count=$((set_count + 1))
+  echo "set secret $name (sha256 $(fingerprint "$value"))"
+  count=$((count + 1))
 done
 
-# JETBRAINS_PUBLISH is a repository variable, not a secret: set it to true
-# once the first plugin version has been approved on the marketplace
-if [ -n "${JETBRAINS_PUBLISH:-}" ]; then
-  gh variable set JETBRAINS_PUBLISH --repo "$repo" --body "$JETBRAINS_PUBLISH"
-  echo "set variable JETBRAINS_PUBLISH=$JETBRAINS_PUBLISH"
-fi
-
-echo "set $set_count secrets on $repo"
+echo "set $count secrets on $repo"
 gh secret list --repo "$repo"
