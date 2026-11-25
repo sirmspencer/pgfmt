@@ -8,8 +8,9 @@ pgfmt formats PostgreSQL `.sql` files with a consistent style, so that every edi
 
 - **Formatted statements are checked.** After formatting a statement, pgfmt parses the result and compares its syntax tree with the original. When the trees differ, the statement is kept as written and reported on stderr.
 - **Unsupported syntax keeps its structure.** A statement that uses syntax the printer does not lay out yet keeps its line breaks, with keywords lowercased and extra spaces removed, and is reported on stderr.
-- **Comments are removed.** `--` and `/* */` comments are removed, including those inside `sql` and `plpgsql` function bodies, unless the `keepComments` setting is on. Text inside strings is not treated as a comment.
+- **Comments are removed.** `--` and `/* */` comments are removed, including those inside `sql` and `plpgsql` function bodies, unless the `keepComments` setting is on. Text inside strings is not treated as a comment. A `--;;` line, which migration tools such as migratus use to separate statements, is kept.
 - **Placeholders are kept.** `:name` placeholders, including kebab-case and snake_case names such as `:user-id` and `:example_key`, are kept as written. A colon inside array brackets (`tags[1:2]`), a cast (`::`), a string, or a comment is not treated as a placeholder.
+- **Stray commas and missing semicolons are repaired.** A comma that can only be extra is removed, and a semicolon is added between two complete statements that have none. Both are reported, and `-check` lists them as fixable.
 - **Literals are printed as written.** String and number literals, including dollar-quoted strings, keep their original text.
 
 ## Style
@@ -68,6 +69,7 @@ pgfmt query.sql                       # print the formatted file
 pgfmt -check $(git ls-files '*.sql')  # report problems, change nothing
 pgfmt -fix migrations/*.sql           # format and repair files in place
 pgfmt -config team.json query.sql     # use a specific settings file
+pgfmt -stdin-path db/migrations/001.sql < 001.sql   # name the file read from stdin
 ```
 
 `-check` reports every problem it finds, one per line, without changing any file:
@@ -80,7 +82,7 @@ queries.sql:7:17: syntax error at or near "name"
 
 `-fix` formats each file, removes stray commas, and rewrites the file. A file with a syntax error that cannot be fixed is left unchanged, and the error is reported. Reading from stdin, as editors do, formats and repairs the same way; on an error that cannot be fixed nothing is written to stdout, so the editor keeps the buffer as it was.
 
-A stray comma is one that can only be extra: a trailing comma before a closing parenthesis, a semicolon, the end of a statement, or a keyword such as `from`; a doubled comma; or a comma directly after an opening parenthesis or a keyword. A missing comma cannot be repaired and is reported as a syntax error.
+A missing semicolon is one between two statements on separate lines, as in a scratch file of queries separated by blank lines; a semicolon is never added to a file with a single statement or at the end of a file. A stray comma is one that can only be extra: a trailing comma before a closing parenthesis, a semicolon, the end of a statement, or a keyword such as `from`; a doubled comma; or a comma directly after an opening parenthesis or a keyword. A missing comma cannot be repaired and is reported as a syntax error.
 
 | Exit status | `-check` | `-fix` and stdin |
 |---|---|---|
@@ -101,7 +103,8 @@ The defaults are the house style described in [rules.md](rules.md). A `.pgfmt.js
   "parenListLimit": 3,
   "keepComments": false,
   "align": true,
-  "blankLinesAroundSetOperators": true
+  "blankLinesAroundSetOperators": true,
+  "migrationPaths": ["migration"]
 }
 ```
 
@@ -113,8 +116,9 @@ The defaults are the house style described in [rules.md](rules.md). A `.pgfmt.js
 | `keepComments` | `false` | Keep comments in place instead of removing them |
 | `align` | `true` | Align `create table` columns, `set` assignments, and select aliases |
 | `blankLinesAroundSetOperators` | `true` | Blank lines before and after `union`, `intersect`, and `except` |
+| `migrationPaths` | `["migration"]` | A file whose path contains any entry, ignoring case, is a migration: a `--;;` line separates its statements, and every statement ends with a semicolon |
 
-pgfmt uses the nearest `.pgfmt.json` in the formatted file's directory or a parent directory. Reading from stdin, it searches from the current directory, which the IntelliJ plugin sets to the file's directory. `pgfmt -config file` uses a specific file instead. An unknown setting or an invalid value is an error, so a misspelled setting is reported rather than ignored. [rules.md](rules.md#settings) shows each setting's effect.
+pgfmt uses the nearest `.pgfmt.json` in the formatted file's directory or a parent directory. Reading from stdin, it uses the path given with `-stdin-path`, which the editor plugins and the configurations below pass, or otherwise the current directory. That path also decides whether the file is a migration. `pgfmt -config file` uses a specific file instead. An unknown setting or an invalid value is an error, so a misspelled setting is reported rather than ignored. [rules.md](rules.md#settings) shows each setting's effect.
 
 ## Editor setup
 
@@ -145,6 +149,7 @@ require("conform").setup({
     -- run from the file's folder, so the nearest .pgfmt.json applies
     pgfmt = {
       command = "pgfmt",
+      args = { "-stdin-path", "$FILENAME" },
       stdin = true,
       cwd = function(_, ctx) return vim.fs.dirname(ctx.filename) end,
     },
@@ -166,7 +171,7 @@ Install pgfmt with Homebrew, npm, or a release binary, then configure apheleia, 
 
 ```elisp
 (with-eval-after-load 'apheleia
-  (setf (alist-get 'pgfmt apheleia-formatters) '("pgfmt"))
+  (setf (alist-get 'pgfmt apheleia-formatters) '("pgfmt" "-stdin-path" filepath))
   (setf (alist-get 'sql-mode apheleia-mode-alist) 'pgfmt))
 ```
 

@@ -115,9 +115,9 @@ Each rule below was compared with two other formatters, using the examples in th
 }
 ```
 
-IntelliJ: 9 same · 26 different · 7 not handled
+IntelliJ: 9 same · 26 different · 8 not handled
 
-sql-formatter: 12 same · 22 different · 8 not handled
+sql-formatter: 12 same · 22 different · 9 not handled
 
 | Rule | IntelliJ | sql-formatter |
 |---|---|---|
@@ -158,6 +158,7 @@ sql-formatter: 12 same · 22 different · 8 not handled
 | [parentheses](#parentheses) | Not handled | Not handled |
 | [quoting](#quoting) | Not handled | Not handled |
 | [stray-commas](#stray-commas) | Not handled | Not handled |
+| [missing-semicolons](#missing-semicolons) | Not handled | Not handled |
 | [comments](#comments) | Different | Different |
 | [placeholders](#placeholders) | Different | Different |
 | [literals](#literals) | Same | Same |
@@ -215,6 +216,7 @@ sql-formatter: 12 same · 22 different · 8 not handled
 **Repairs**
 
 - [stray-commas](#stray-commas)
+- [missing-semicolons](#missing-semicolons)
 
 **Preservation**
 
@@ -1030,7 +1032,7 @@ select "user".id, 1 as "order" from "user";
 
 ### comments
 
-**Comments are removed.** That includes `--` and `/* */` comments anywhere in a statement, between statements, and inside `sql` and `plpgsql` function bodies, where a line that held only a comment is dropped. Comments in bodies of other languages, such as `plpython3u`, are left with the body. Text inside strings that looks like a comment is kept, and so are `:name` placeholders. Line numbers in error messages still refer to the original file. Test case: `10-comments`.
+**Comments are removed, except `--;;` separator lines.** That includes `--` and `/* */` comments anywhere in a statement, between statements, and inside `sql` and `plpgsql` function bodies, where a line that held only a comment is dropped. Comments in bodies of other languages, such as `plpython3u`, are left with the body. Text inside strings that looks like a comment is kept, and so are `:name` placeholders. Line numbers in error messages still refer to the original file. A line holding only `--;;`, which migration tools such as migratus use to separate statements, is kept, and it directly follows the statement before it. Test cases: `10-comments`, `29-migration-separators`.
 
 **IntelliJ:** Different: comments are kept beside the code they were written next to.
 
@@ -1043,6 +1045,15 @@ select id, -- primary key
 from users
 -- only active users
 where active = true; -- trailing
+```
+
+`--;;` separators between migration statements are kept:
+
+```sql
+DROP TABLE IF EXISTS app.first_table CASCADE;
+--;;
+
+DROP TABLE IF EXISTS app.second_table CASCADE;
 ```
 
 Text in a string is not a comment:
@@ -1093,6 +1104,41 @@ select a,, b from t;
 
 ```sql
 select , a from t;
+```
+
+---
+
+### missing-semicolons
+
+**A semicolon is added between two statements that have none.** This applies only when parsing fails at a statement keyword, such as `select`, `insert`, `update`, `delete`, `with`, `create`, `alter`, or `drop`, that starts its own line, and only when everything before it parses on its own as complete statements. A file with a single statement is never changed, a semicolon is never added at the end of a file, and a statement that continues onto the next line, such as `insert into t` followed by `select`, is one statement. `pgfmt -check` reports each one as fixable, and `pgfmt -fix` adds it.
+
+The repair depends on the missing semicolon causing a syntax error. When the next statement's first word also fits the previous statement, PostgreSQL reads both as one statement and so does pgfmt: `select 2` followed by `delete from t` on the next line is `select 2 as delete from t`, with `delete` as a column alias.
+
+**IntelliJ:** Not handled: statements without semicolons are left as written.
+
+**sql-formatter:** Not handled: statements without semicolons are left as written.
+
+Statements separated only by blank lines, as in a scratch file:
+
+```sql
+select id from users
+
+select id from orders
+delete from sessions where expires_at < now();
+```
+
+A run-together pair that is still one valid statement is formatted as one statement:
+
+```sql
+select 2
+delete from t
+```
+
+A single statement continued on the next line is not changed:
+
+```sql
+insert into archived_users
+select * from users where deleted_at is not null
 ```
 
 ---
@@ -1193,7 +1239,8 @@ The default settings:
   "parenListLimit": 3,
   "keepComments": false,
   "align": true,
-  "blankLinesAroundSetOperators": true
+  "blankLinesAroundSetOperators": true,
+  "migrationPaths": ["migration"]
 }
 ```
 
@@ -1266,4 +1313,23 @@ create table rate_limits (id bigserial primary key, max_requests_per_minute inte
 
 ```sql {"blankLinesAroundSetOperators": false}
 select id from users union all select id from archived_users;
+```
+
+### migrationPaths
+
+**Files whose path contains any of these entries, ignoring case, are migrations.** In a migration, a `--;;` line separates every pair of statements, as migration tools such as migratus expect, and every statement ends with a semicolon, including the last. Existing separators are kept, not repeated, and SQL inside function bodies is never split. The default `["migration"]` matches any `migrations` folder and any file with `migration` in its name; an empty list turns migrations off. Editors pass the file's path with `pgfmt -stdin-path`, so formatting from an editor detects migrations the same way. Default `["migration"]`.
+
+A file in a `db/migrations` folder:
+
+```sql {"path": "db/migrations/001-init.up.sql"}
+DROP TABLE IF EXISTS app.first_table CASCADE
+DROP TABLE IF EXISTS app.second_table CASCADE;
+CREATE TABLE app.third_table (id bigint PRIMARY KEY)
+```
+
+Another location, with `{"migrationPaths": ["repo/migrations/sql"]}` in `.pgfmt.json`:
+
+```sql {"migrationPaths": ["repo/migrations/sql"], "path": "repo/migrations/sql/002.sql"}
+alter table app.third_table add column note text
+create index third_table_note_idx on app.third_table (note)
 ```

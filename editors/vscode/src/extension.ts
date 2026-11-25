@@ -50,7 +50,9 @@ async function format(
   const executable = findExecutable(context);
   const text = document.getText();
   try {
-    const formatted = await run(executable, text, workingDirectory(document), output);
+    // the file's path decides its settings and whether it is a migration
+    const args = document.uri.scheme === "file" ? ["-stdin-path", document.uri.fsPath] : [];
+    const formatted = await run(executable, args, text, workingDirectory(document), output);
     if (formatted === text) {
       return [];
     }
@@ -66,9 +68,15 @@ async function format(
 
 // runs pgfmt with text on stdin and resolves with stdout; any notes pgfmt
 // prints on stderr while succeeding, such as fixed commas, go to the output channel
-function run(executable: string, text: string, cwd: string | undefined, output: vscode.OutputChannel): Promise<string> {
+function run(
+  executable: string,
+  args: string[],
+  text: string,
+  cwd: string | undefined,
+  output: vscode.OutputChannel,
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, [], { cwd });
+    const child = spawn(executable, args, { cwd });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {

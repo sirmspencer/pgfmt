@@ -31,6 +31,7 @@ func splitDollarBody(body string) (tag, code string, ok bool) {
 // formatSQLBody formats a language sql body with the same rules as a file:
 // a one-line result stays on the as line, anything longer is indented inside the quotes
 func formatSQLBody(body string, opts Options) string {
+	opts.migration = false
 	tag, code, ok := splitDollarBody(body)
 	if !ok {
 		return body
@@ -53,6 +54,7 @@ func formatSQLBody(body string, opts Options) string {
 // formatPlpgsqlBody formats each standalone sql statement inside a plpgsql
 // body, then lowercases and indents the whole body
 func formatPlpgsqlBody(body string, opts Options) string {
+	opts.migration = false
 	tag, code, ok := splitDollarBody(body)
 	if !ok {
 		return body

@@ -203,7 +203,7 @@ func stripComments(src string) string {
 	}
 	out := []byte(src)
 	for _, token := range scan.Tokens {
-		if !isComment(token) {
+		if !isComment(token) || isSeparator(src[token.Start:token.End]) {
 			continue
 		}
 		for index := token.Start; index < token.End; index++ {
@@ -235,4 +235,11 @@ func stripCommentLines(code string) string {
 		}
 	}
 	return strings.Join(kept, "\n")
+}
+
+// isSeparator reports whether a comment is the --;; line that migration tools
+// such as migratus use to separate statements. it is part of the file's
+// structure, so it is kept even when comments are removed.
+func isSeparator(comment string) bool {
+	return strings.TrimSpace(comment) == "--;;"
 }

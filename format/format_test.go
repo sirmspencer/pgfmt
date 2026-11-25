@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -84,7 +85,8 @@ func countComments(t *testing.T, src string) int {
 	}
 	count := 0
 	for _, token := range scan.Tokens {
-		if isComment(token) {
+		// --;; separators are kept on purpose
+		if isComment(token) && !isSeparator(src[token.Start:token.End]) {
 			count++
 		}
 	}
@@ -515,15 +517,95 @@ func TestParseOptions(t *testing.T) {
 	}
 	want := DefaultOptions()
 	want.Indent, want.KeepComments = 4, true
-	if opts != want {
+	if !reflect.DeepEqual(opts, want) {
 		t.Errorf("options = %+v, want %+v", opts, want)
 	}
-	if opts, err := ParseOptions([]byte(`{}`)); err != nil || opts != DefaultOptions() {
+	if opts, err := ParseOptions([]byte(`{}`)); err != nil || !reflect.DeepEqual(opts, DefaultOptions()) {
 		t.Errorf("empty settings = %+v, %v, want the defaults", opts, err)
 	}
 	for _, bad := range []string{`{"indnet": 4}`, `{"indent": 0}`, `{"indent": 9}`, `{"clauseListLimit": -1}`, `{"parenListLimit": -1}`, `{"align": "yes"}`, `not json`} {
 		if _, err := ParseOptions([]byte(bad)); err == nil {
 			t.Errorf("%s: no error", bad)
 		}
+	}
+}
+
+func TestMigrationSeparators(t *testing.T) {
+	input := "DROP TABLE a;\n--;;\n\nDROP TABLE b;\n--;;\nDROP TABLE c;\n"
+	want := "drop table a;\n--;;\ndrop table b;\n--;;\ndrop table c;\n"
+	assertOutput(t, formatOrFail(t, input).Output, want)
+	keep := DefaultOptions()
+	keep.KeepComments = true
+	result, err := FormatResultWith(input, keep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOutput(t, result.Output, want)
+}
+
+func TestMissingSemicolons(t *testing.T) {
+	tests := []struct {
+		name, input, want string
+		fixes             int
+	}{
+		{"between two statements", "select a from t\nselect b from u", "select a\nfrom t;\n\nselect b\nfrom u\n", 1},
+		{"between several statements", "select 1\n\nselect 2\nupdate t set a = 1;", "select 1;\n\nselect 2;\n\nupdate t\nset a = 1;\n", 2},
+		{"a keyword first read as an alias", "select id from orders\ndelete from sessions", "select id\nfrom orders;\n\ndelete from sessions\n", 1},
+		{"after a comment", "select 1 -- one\nselect 2", "select 1;\n\nselect 2\n", 1},
+		{"a single statement is unchanged", "select a from t", "select a\nfrom t\n", 0},
+		{"insert from a select is one statement", "insert into t\nselect * from s", "insert into t\nselect *\nfrom s\n", 0},
+		{"a view's query is one statement", "create view v as\nselect 1", "create view v as\nselect 1\n", 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := formatOrFail(t, test.input)
+			assertOutput(t, result.Output, test.want)
+			if len(result.Fixed) != test.fixes {
+				t.Errorf("fixed %d, want %d: %+v", len(result.Fixed), test.fixes, result.Fixed)
+			}
+		})
+	}
+	// a statement keyword that is not at the start of a line, or inside
+	// parentheses, is not a missing semicolon
+	for _, input := range []string{"select 1 select 2", "select a from (select 1\nselect 2) s", "select a from t\nwhere"} {
+		if _, err := Format(input); err == nil {
+			t.Errorf("%q: no error", input)
+		}
+	}
+}
+
+func TestMigrations(t *testing.T) {
+	opts := DefaultOptions().ForPath("/repo/db/migrations/001-init.up.sql")
+	input := "DROP TABLE a\nDROP TABLE b;\n--;;\nCREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ select 1; select 2 $$"
+	want := "drop table a;\n--;;\ndrop table b;\n--;;\ncreate function f()\n  returns integer\n  language sql\nas $$\n  select 1;\n\n  select 2\n$$;\n"
+	result, err := FormatResultWith(input, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOutput(t, result.Output, want)
+
+	paths := []struct {
+		path  string
+		match bool
+	}{
+		{"/repo/db/migrations/001.sql", true},
+		{"/repo/Migrations/001.sql", true},
+		{"/repo/sql/add_migration_table.sql", true},
+		{"/repo/sql/queries/users.sql", false},
+	}
+	for _, test := range paths {
+		if got := DefaultOptions().ForPath(test.path).migration; got != test.match {
+			t.Errorf("%s: migration %v, want %v", test.path, got, test.match)
+		}
+	}
+	custom := DefaultOptions()
+	custom.MigrationPaths = []string{"repo/migrations/sql"}
+	if !custom.ForPath("/home/me/repo/migrations/sql/001.sql").migration || custom.ForPath("/home/me/db/migrations/001.sql").migration {
+		t.Errorf("custom migration paths did not match as expected")
+	}
+	off := DefaultOptions()
+	off.MigrationPaths = nil
+	if off.ForPath("/repo/migrations/001.sql").migration {
+		t.Errorf("an empty list still matched")
 	}
 }

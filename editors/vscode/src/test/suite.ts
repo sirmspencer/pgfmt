@@ -38,5 +38,10 @@ export async function run(): Promise<void> {
   fs.writeFileSync(path.join(folder, ".pgfmt.json"), '{"indent": 4}');
   assert.strictEqual(await formatted("select a, b, c, d from t", folder), "select\n    a,\n    b,\n    c,\n    d\nfrom t\n");
 
+  // a file in a migrations folder gets --;; between statements
+  const migrations = path.join(folder, "migrations");
+  fs.mkdirSync(migrations);
+  assert.strictEqual(await formatted("drop table a; drop table b", migrations), "drop table a;\n--;;\ndrop table b;\n");
+
   console.log("all pgfmt extension tests passed");
 }

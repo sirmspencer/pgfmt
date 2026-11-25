@@ -115,9 +115,9 @@ Each rule below was compared with two other formatters, using the examples in th
 }
 ```
 
-IntelliJ: 9 same · 26 different · 7 not handled
+IntelliJ: 9 same · 26 different · 8 not handled
 
-sql-formatter: 12 same · 22 different · 8 not handled
+sql-formatter: 12 same · 22 different · 9 not handled
 
 | Rule | IntelliJ | sql-formatter |
 |---|---|---|
@@ -158,6 +158,7 @@ sql-formatter: 12 same · 22 different · 8 not handled
 | [parentheses](#parentheses) | Not handled | Not handled |
 | [quoting](#quoting) | Not handled | Not handled |
 | [stray-commas](#stray-commas) | Not handled | Not handled |
+| [missing-semicolons](#missing-semicolons) | Not handled | Not handled |
 | [comments](#comments) | Different | Different |
 | [placeholders](#placeholders) | Different | Different |
 | [literals](#literals) | Same | Same |
@@ -215,6 +216,7 @@ sql-formatter: 12 same · 22 different · 8 not handled
 **Repairs**
 
 - [stray-commas](#stray-commas)
+- [missing-semicolons](#missing-semicolons)
 
 **Preservation**
 
@@ -1884,7 +1886,7 @@ from "user";
 
 ### comments
 
-**Comments are removed.** That includes `--` and `/* */` comments anywhere in a statement, between statements, and inside `sql` and `plpgsql` function bodies, where a line that held only a comment is dropped. Comments in bodies of other languages, such as `plpython3u`, are left with the body. Text inside strings that looks like a comment is kept, and so are `:name` placeholders. Line numbers in error messages still refer to the original file. Test case: `10-comments`.
+**Comments are removed, except `--;;` separator lines.** That includes `--` and `/* */` comments anywhere in a statement, between statements, and inside `sql` and `plpgsql` function bodies, where a line that held only a comment is dropped. Comments in bodies of other languages, such as `plpython3u`, are left with the body. Text inside strings that looks like a comment is kept, and so are `:name` placeholders. Line numbers in error messages still refer to the original file. A line holding only `--;;`, which migration tools such as migratus use to separate statements, is kept, and it directly follows the statement before it. Test cases: `10-comments`, `29-migration-separators`.
 
 **IntelliJ:** Different: comments are kept beside the code they were written next to.
 
@@ -1905,6 +1907,23 @@ where active = true; -- trailing
 select id, email
 from users
 where active = true;
+```
+
+`--;;` separators between migration statements are kept:
+
+```sql
+DROP TABLE IF EXISTS app.first_table CASCADE;
+--;;
+
+DROP TABLE IF EXISTS app.second_table CASCADE;
+```
+
+↓
+
+```sql
+drop table if exists app.first_table cascade;
+--;;
+drop table if exists app.second_table cascade;
 ```
 
 Text in a string is not a comment:
@@ -1997,6 +2016,70 @@ select , a from t;
 ```sql
 select a
 from t;
+```
+
+---
+
+### missing-semicolons
+
+**A semicolon is added between two statements that have none.** This applies only when parsing fails at a statement keyword, such as `select`, `insert`, `update`, `delete`, `with`, `create`, `alter`, or `drop`, that starts its own line, and only when everything before it parses on its own as complete statements. A file with a single statement is never changed, a semicolon is never added at the end of a file, and a statement that continues onto the next line, such as `insert into t` followed by `select`, is one statement. `pgfmt -check` reports each one as fixable, and `pgfmt -fix` adds it.
+
+The repair depends on the missing semicolon causing a syntax error. When the next statement's first word also fits the previous statement, PostgreSQL reads both as one statement and so does pgfmt: `select 2` followed by `delete from t` on the next line is `select 2 as delete from t`, with `delete` as a column alias.
+
+**IntelliJ:** Not handled: statements without semicolons are left as written.
+
+**sql-formatter:** Not handled: statements without semicolons are left as written.
+
+Statements separated only by blank lines, as in a scratch file:
+
+```sql
+select id from users
+
+select id from orders
+delete from sessions where expires_at < now();
+```
+
+↓
+
+```sql
+select id
+from users;
+
+select id
+from orders;
+
+delete from sessions
+where expires_at < now();
+```
+
+A run-together pair that is still one valid statement is formatted as one statement:
+
+```sql
+select 2
+delete from t
+```
+
+↓
+
+```sql
+select 2 as delete
+from t
+```
+
+A single statement continued on the next line is not changed:
+
+```sql
+insert into archived_users
+select * from users where deleted_at is not null
+```
+
+↓
+
+```sql
+insert into archived_users
+select *
+from users
+where deleted_at is not null
 ```
 
 ---
@@ -2149,7 +2232,8 @@ The default settings:
   "parenListLimit": 3,
   "keepComments": false,
   "align": true,
-  "blankLinesAroundSetOperators": true
+  "blankLinesAroundSetOperators": true,
+  "migrationPaths": ["migration"]
 }
 ```
 
@@ -2157,7 +2241,7 @@ The default settings:
 
 **The number of spaces per indentation level,** from 1 to 8. It applies everywhere, including inside function bodies. Default `2`.
 
-With `{"indent": 4}`:
+With `{"indent":4}`:
 
 ```sql
 select id, email, name, created_at from users where active = true and id = :id;
@@ -2181,7 +2265,7 @@ where
 
 **The most items `select`, `group by`, `order by`, and `returning` keep on the keyword's line.** `0` always splits, even a single item. It does not affect parenthesized lists. Default `3`.
 
-With `{"clauseListLimit": 1}`:
+With `{"clauseListLimit":1}`:
 
 ```sql
 select id, email from users order by id, email;
@@ -2199,7 +2283,7 @@ order by
   email;
 ```
 
-With `{"clauseListLimit": 0}`:
+With `{"clauseListLimit":0}`:
 
 ```sql
 select id from users order by id;
@@ -2215,7 +2299,7 @@ order by
   id;
 ```
 
-With `{"clauseListLimit": 5}`:
+With `{"clauseListLimit":5}`:
 
 ```sql
 select id, email, name, region, created_at from users;
@@ -2232,7 +2316,7 @@ from users;
 
 **The most items a parenthesized list keeps on one line:** function arguments and parameters, `in (...)` lists, `insert` columns and rows, and the other lists in [lists](#lists). `0` always splits a list with at least one item; an empty list such as `now()` stays as it is. It does not affect `select` lists. Default `3`.
 
-With `{"parenListLimit": 6}`:
+With `{"parenListLimit":6}`:
 
 ```sql
 select make_timestamp(:year, :month, :day, 0, 0, 0) where id in (1, 2, 3, 4);
@@ -2245,7 +2329,7 @@ select make_timestamp(:year, :month, :day, 0, 0, 0)
 where id in (1, 2, 3, 4);
 ```
 
-With `{"parenListLimit": 1}`:
+With `{"parenListLimit":1}`:
 
 ```sql
 select coalesce(a, b) from t;
@@ -2261,7 +2345,7 @@ select coalesce(
 from t;
 ```
 
-With `{"parenListLimit": 0}`:
+With `{"parenListLimit":0}`:
 
 ```sql
 select lower(email), now() from users where id in (:id);
@@ -2285,7 +2369,7 @@ where id in (
 
 **Keep comments in place instead of removing them.** Comments stay next to the code they were written beside, and a select list with a comment between items is split one item per line so the comment keeps its place. Default `false`.
 
-With `{"keepComments": true}`:
+With `{"keepComments":true}`:
 
 ```sql
 -- leading comment for the query
@@ -2308,7 +2392,7 @@ from users; -- trailing
 
 **Align `create table` columns, `set` assignments, and select aliases into columns,** as described in [alignment](#alignment). With `false`, one space separates a name from what follows it everywhere. Default `true`.
 
-With `{"align": false}`:
+With `{"align":false}`:
 
 ```sql
 update rate_limits set max_requests_per_minute = :max-requests-per-minute, burst = :burst where id = :id;
@@ -2324,7 +2408,7 @@ set
 where id = :id;
 ```
 
-With `{"align": false}`:
+With `{"align":false}`:
 
 ```sql
 create table rate_limits (id bigserial primary key, max_requests_per_minute integer not null, burst integer not null default 10);
@@ -2344,7 +2428,7 @@ create table rate_limits (
 
 **Put a blank line before and after `union`, `intersect`, and `except`.** Default `true`.
 
-With `{"blankLinesAroundSetOperators": false}`:
+With `{"blankLinesAroundSetOperators":false}`:
 
 ```sql
 select id from users union all select id from archived_users;
@@ -2358,4 +2442,47 @@ from users
 union all
 select id
 from archived_users;
+```
+
+### migrationPaths
+
+**Files whose path contains any of these entries, ignoring case, are migrations.** In a migration, a `--;;` line separates every pair of statements, as migration tools such as migratus expect, and every statement ends with a semicolon, including the last. Existing separators are kept, not repeated, and SQL inside function bodies is never split. The default `["migration"]` matches any `migrations` folder and any file with `migration` in its name; an empty list turns migrations off. Editors pass the file's path with `pgfmt -stdin-path`, so formatting from an editor detects migrations the same way. Default `["migration"]`.
+
+A file in a `db/migrations` folder:
+
+As `db/migrations/001-init.up.sql`:
+
+```sql
+DROP TABLE IF EXISTS app.first_table CASCADE
+DROP TABLE IF EXISTS app.second_table CASCADE;
+CREATE TABLE app.third_table (id bigint PRIMARY KEY)
+```
+
+↓
+
+```sql
+drop table if exists app.first_table cascade;
+--;;
+drop table if exists app.second_table cascade;
+--;;
+create table app.third_table (
+  id bigint primary key
+);
+```
+
+Another location, with `{"migrationPaths": ["repo/migrations/sql"]}` in `.pgfmt.json`:
+
+With `{"migrationPaths":["repo/migrations/sql"]}`, as `repo/migrations/sql/002.sql`:
+
+```sql
+alter table app.third_table add column note text
+create index third_table_note_idx on app.third_table (note)
+```
+
+↓
+
+```sql
+alter table app.third_table add column note text;
+--;;
+create index third_table_note_idx on app.third_table (note);
 ```

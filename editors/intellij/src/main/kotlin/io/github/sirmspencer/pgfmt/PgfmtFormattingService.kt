@@ -40,7 +40,11 @@ class PgfmtFormattingService : AsyncDocumentFormattingService() {
             return null
         }
         val commandLine = GeneralCommandLine(executable).withCharset(StandardCharsets.UTF_8)
-        request.ioFile?.parentFile?.let { commandLine.withWorkDirectory(it) }
+        // the file's path decides its settings and whether it is a migration
+        request.ioFile?.let { file ->
+            commandLine.withParameters("-stdin-path", file.path)
+            file.parentFile?.let { commandLine.withWorkDirectory(it) }
+        }
         return PgfmtTask(commandLine, request)
     }
 

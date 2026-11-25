@@ -46,9 +46,10 @@ func main() {
 	fix := flag.Bool("fix", false, "format each file and remove stray commas, rewriting it in place")
 	check := flag.Bool("check", false, "report unformatted files, fixable problems, and syntax errors without changing anything")
 	configPath := flag.String("config", "", "settings file to use instead of searching for "+configName)
+	stdinPath := flag.String("stdin-path", "", "path of the file being formatted from stdin, used to find settings and to detect migrations")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: pgfmt [-check | -fix | -version] [-config file] [file ...]")
+		fmt.Fprintln(os.Stderr, "usage: pgfmt [-check | -fix | -version] [-config file] [-stdin-path file] [file ...]")
 		fmt.Fprintln(os.Stderr, "with no files, pgfmt formats stdin to stdout")
 		flag.PrintDefaults()
 	}
@@ -61,7 +62,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "pgfmt: -check and -fix cannot be used together")
 		os.Exit(2)
 	}
-	os.Exit(run(flag.Args(), *fix, *check, &settings{explicit: *configPath, found: map[string]format.Options{}}))
+	os.Exit(run(flag.Args(), *fix, *check, *stdinPath, &settings{explicit: *configPath, found: map[string]format.Options{}}))
 }
 
 // exit statuses
@@ -73,25 +74,33 @@ const (
 
 // learn: `fix, check bool` declares two parameters of the same type. io.ReadAll(os.Stdin) reads
 // learn: until end of input. bytes.Equal compares byte slices; == does not work on slices in go.
-func run(files []string, fix, check bool, config *settings) int {
+func run(files []string, fix, check bool, stdinPath string, config *settings) int {
 	if len(files) == 0 {
 		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "pgfmt:", err)
 			return statusErrors
 		}
-		cwd, _ := os.Getwd()
-		opts, err := config.forDir(cwd)
+		// editors pass the file's path, which decides its settings and whether it is a migration
+		name := "<stdin>"
+		var opts format.Options
+		if stdinPath != "" {
+			name = stdinPath
+			opts, err = config.forFile(stdinPath)
+		} else {
+			cwd, _ := os.Getwd()
+			opts, err = config.forDir(cwd)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "pgfmt:", err)
 			return statusErrors
 		}
 		if check {
-			return checkFile("<stdin>", input, opts)
+			return checkFile(name, input, opts)
 		}
 		// editors pipe the buffer through here: on an error nothing reaches stdout
 		result, err := format.FormatResultWith(string(input), opts)
-		report(os.Stderr, "<stdin>", result, err, err == nil)
+		report(os.Stderr, name, result, err, err == nil)
 		if err != nil {
 			return statusErrors
 		}
@@ -189,12 +198,18 @@ type settings struct {
 	found    map[string]format.Options
 }
 
+// forFile returns the options for path: its directory's settings, plus
+// whether the path marks it as a migration
 func (config *settings) forFile(path string) (format.Options, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return format.Options{}, err
 	}
-	return config.forDir(filepath.Dir(abs))
+	opts, err := config.forDir(filepath.Dir(abs))
+	if err != nil {
+		return opts, err
+	}
+	return opts.ForPath(abs), nil
 }
 
 // forDir uses -config when given, otherwise the nearest .pgfmt.json in dir or

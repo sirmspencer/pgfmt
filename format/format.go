@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -75,6 +76,28 @@ type Options struct {
 	// BlankLinesAroundSetOperators puts a blank line before and after union,
 	// intersect, and except
 	BlankLinesAroundSetOperators bool `json:"blankLinesAroundSetOperators"`
+	// MigrationPaths marks a file as a migration when any entry appears in its
+	// path, ignoring case. migrations separate statements with --;; and end
+	// every statement with a semicolon.
+	MigrationPaths []string `json:"migrationPaths"`
+
+	// migration is set by ForPath for a file that matches MigrationPaths
+	migration bool
+}
+
+// ForPath returns the options for formatting the file at path, which decides
+// whether it is a migration
+// learn: a method with a value receiver gets a copy, so changing opts here leaves the caller's
+// learn: options alone.
+func (opts Options) ForPath(path string) Options {
+	opts.migration = false
+	normalized := strings.ToLower(filepath.ToSlash(path))
+	for _, entry := range opts.MigrationPaths {
+		if entry != "" && strings.Contains(normalized, strings.ToLower(filepath.ToSlash(entry))) {
+			opts.migration = true
+		}
+	}
+	return opts
 }
 
 // DefaultOptions returns the house style
@@ -86,6 +109,7 @@ func DefaultOptions() Options {
 		KeepComments:                 false,
 		Align:                        true,
 		BlankLinesAroundSetOperators: true,
+		MigrationPaths:               []string{"migration"},
 	}
 }
 
@@ -190,6 +214,11 @@ func formatSQL(src string, opts Options) (*Result, error) {
 			src = fixed
 			continue
 		}
+		if fixed, fix, ok := insertMissingSemicolon(src, err, modes); ok {
+			fixes = append(fixes, fix)
+			src = fixed
+			continue
+		}
 		// hiding a fragment left a gap the statement needs, so it must be a name
 		if lastFragment != "" && params.escalate(lastFragment) {
 			lastFragment = ""
@@ -244,7 +273,24 @@ func formatOnce(src string, params *placeholders, opts Options) (*Result, error)
 	if len(footer) > 0 {
 		groups = append(groups, strings.TrimSuffix(leadingComments(source, footer, -1), "\n"))
 	}
-	output := strings.Join(groups, "\n\n")
+	// statements are separated by a blank line, except that a --;; separator
+	// line directly follows the statement before it. in a migration, every
+	// statement after the first gets a separator.
+	var joined strings.Builder
+	for index, group := range groups {
+		if index > 0 {
+			switch {
+			case strings.HasPrefix(group, "--;;"):
+				joined.WriteString("\n")
+			case opts.migration && index < len(spans):
+				joined.WriteString("\n--;;\n")
+			default:
+				joined.WriteString("\n\n")
+			}
+		}
+		joined.WriteString(group)
+	}
+	output := joined.String()
 	if output != "" {
 		output += "\n"
 	}
@@ -362,7 +408,8 @@ func leadingComments(src *source, comments []*pg.ScanToken, next int32) string {
 		if index+1 < len(comments) {
 			following = comments[index+1].Start
 		}
-		if src.blankLineBetween(comment.End, following) {
+		// the statement after a --;; separator follows it directly
+		if src.blankLineBetween(comment.End, following) && !isSeparator(commentText(src, comment)) {
 			out.WriteString("\n")
 		}
 	}
@@ -383,6 +430,9 @@ func (p *printer) formatStatement(span *statementSpan) (string, string) {
 	text := p.src.cleanText(span.start, span.through)
 	if !p.sameTree(span.raw.Stmt, text) {
 		text = p.src.orig[span.start:span.through]
+	}
+	if p.opts.migration && !span.semicolon {
+		text += ";"
 	}
 	for _, comment := range span.trailing {
 		text += " " + commentText(p.src, comment)
@@ -425,7 +475,8 @@ func (p *printer) tryStatement(span *statementSpan) (body string, reason string)
 		}
 		inner = append(inner, comment)
 	}
-	if span.semicolon {
+	// every statement in a migration ends with a semicolon
+	if span.semicolon || p.opts.migration {
 		lines[len(lines)-1] += ";"
 	}
 	for _, comment := range inner {
