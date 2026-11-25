@@ -13,7 +13,7 @@ This document describes the accounts, tokens, and one-time steps behind pgfmt's 
 | npm | `@sirmspencer/pgfmt` and one `@sirmspencer/pgfmt-<os>-<cpu>` package per platform | the workflow, with `NPM_TOKEN` |
 | Visual Studio Marketplace | `sirmspencer.pgfmt`, one package per platform | the workflow, with `VSCE_PAT` |
 | Open VSX | `sirmspencer.pgfmt`, one package per platform | the workflow, with `OVSX_PAT` |
-| JetBrains Marketplace | the pgfmt plugin, one zip with every platform's binary | by hand for the first version, then the workflow, with `JETBRAINS_MARKETPLACE_TOKEN` |
+| JetBrains Marketplace | the pgfmt plugin, one zip with every platform's binary | the workflow, with `JETBRAINS_MARKETPLACE_TOKEN`; the first version of a new plugin is uploaded by hand |
 
 The platforms are macOS on Apple silicon and Intel, Linux on x64 and ARM, and Windows on x64. pgfmt links the PostgreSQL parser through cgo, so each platform is built and tested on its own runner; macOS builds both of its architectures on one runner.
 
@@ -61,13 +61,12 @@ scripts/set-secrets.sh ~/pgfmt-secrets.env  # reads another file
 
 Existing secrets are replaced, so updating one token means changing its line and running the script again. The script never prints a value; it prints the first 8 characters of each value's SHA-256 hash instead, to confirm which token was stored. To compare, copy the intended token and run `pbpaste | shasum -a 256 | cut -c1-8` on macOS, which keeps the token out of the shell history.
 
-The script stores whatever the file contains. If a secret is changed on GitHub directly, the file needs the same change, or the next run of the script replaces the secret with the old value. A `JETBRAINS_PUBLISH` line is stored as a repository variable instead of a secret. `gh` must be signed in as an account with admin access to the repository.
+The script stores whatever the file contains. If a secret is changed on GitHub directly, the file needs the same change, or the next run of the script replaces the secret with the old value. `gh` must be signed in as an account with admin access to the repository.
 
 ## One-time steps
 
 1. **JetBrains Marketplace.** The first version of the plugin must be uploaded by hand at plugins.jetbrains.com/plugin/add, using the `pgfmt-intellij-<version>.zip` attached to a GitHub release. The form asks for the license (MIT) and the source code link. JetBrains reviews every new plugin before it becomes public.
-2. **Automatic JetBrains publishing.** After the first version is approved, the repository variable `JETBRAINS_PUBLISH` is set to `true`, under Settings, Secrets and variables, Actions, Variables. Until then, the workflow builds the plugin and attaches it to the release without publishing it.
-3. **Homebrew users** run `brew trust sirmspencer/tap` once, as recent Homebrew versions require for third-party taps.
+2. **Homebrew users** run `brew trust sirmspencer/tap` once, as recent Homebrew versions require for third-party taps.
 
 ## Releasing a version
 
@@ -83,7 +82,7 @@ The `release` workflow then runs these jobs:
 3. **homebrew:** writes the formula from `checksums.txt`, installs and tests it on macOS from a checkout of the tap, and pushes it to `sirmspencer/homebrew-tap` only if the test passes.
 4. **npm:** publishes the platform packages, then `@sirmspencer/pgfmt`, with provenance. Versions that already exist are skipped, so the job can be rerun.
 5. **vscode:** packages one extension per platform with its binary, attaches them to the release, and publishes them to the Visual Studio Marketplace and Open VSX.
-6. **jetbrains:** builds the plugin with every binary, attaches it to the release, and publishes it when `JETBRAINS_PUBLISH` is `true`.
+6. **jetbrains:** builds the plugin with every binary, attaches it to the release, and publishes it to the JetBrains Marketplace.
 
 Running the workflow by hand from the Actions tab runs only the build job, which tests every platform without publishing anything.
 

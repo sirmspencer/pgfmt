@@ -161,8 +161,13 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
+          # retry dropped connections; versions already published are skipped
           for vsix in "$PWD"/dist/*.vsix; do
-            (cd editors/vscode && npx vsce publish --packagePath "$vsix")
+            for attempt in 1 2 3; do
+              (cd editors/vscode && npx vsce publish --packagePath "$vsix" --skip-duplicate) && break
+              [ "$attempt" = 3 ] && exit 1
+              sleep 60
+            done
           done
       - name: publish to open vsx
         env:
@@ -170,7 +175,11 @@ jobs:
         run: |
           npx --yes ovsx create-namespace sirmspencer -p "$OVSX_PAT" || true
           for vsix in dist/*.vsix; do
-            npx --yes ovsx publish "$vsix" -p "$OVSX_PAT"
+            for attempt in 1 2 3; do
+              npx --yes ovsx publish "$vsix" -p "$OVSX_PAT" --skip-duplicate && break
+              [ "$attempt" = 3 ] && exit 1
+              sleep 60
+            done
           done
 
   jetbrains:
@@ -186,16 +195,19 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      # maven central sometimes rate limits shared runners, so retry the build
       - name: package
-        run: scripts/package-intellij.sh "${GITHUB_REF_NAME}" dist
+        run: |
+          for attempt in 1 2 3; do
+            scripts/package-intellij.sh "${GITHUB_REF_NAME}" dist && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep 60
+          done
       - name: attach to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${GITHUB_REF_NAME}" dist/pgfmt-intellij-*.zip --repo "${GITHUB_REPOSITORY}" --clobber
-      # the first version of a plugin must be uploaded by hand on plugins.jetbrains.com;
-      # set the repository variable JETBRAINS_PUBLISH to true once it is approved
       - name: publish to the jetbrains marketplace
-        if: vars.JETBRAINS_PUBLISH == 'true'
         env:
           PUBLISH_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
         working-directory: editors/intellij
