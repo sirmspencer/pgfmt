@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-latest
             targets: darwin-arm64 darwin-amd64
           - runner: ubuntu-24.04
             targets: linux-amd64
