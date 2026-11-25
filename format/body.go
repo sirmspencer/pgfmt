@@ -35,6 +35,7 @@ func formatSQLBody(body string) string {
 	if !ok {
 		return body
 	}
+	code = stripCommentLines(code)
 	result, err := formatSQL(code)
 	if err != nil || strings.TrimSpace(result.Output) == "" {
 		return reindentBody(lowercaseBody(body))
@@ -53,6 +54,7 @@ func formatPlpgsqlBody(body string) string {
 	if !ok {
 		return body
 	}
+	code = stripCommentLines(code)
 	var out strings.Builder
 	last := 0
 	for _, span := range plpgsqlStatements(code) {

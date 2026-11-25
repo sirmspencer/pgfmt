@@ -74,15 +74,19 @@ func lowercaseBody(body string) string {
 func (src *source) cleanText(from, to int32) string {
 	var out strings.Builder
 	last := from
+	afterLineComment := false
 	for _, token := range src.tokens {
 		if token.Start < from || token.End > to {
 			continue
 		}
 		gap := cleanGap(src.orig[last:token.Start])
-		// no space before a comma or semicolon on the same line
-		if gap == " " && (token.Token == pg.Token_ASCII_44 || token.Token == pg.Token_ASCII_59) {
+		// no space before a comma on the same line, and a semicolon follows the
+		// token before it, unless that token is a -- comment, which would hide it
+		if (gap == " " && token.Token == pg.Token_ASCII_44) ||
+			(token.Token == pg.Token_ASCII_59 && strings.TrimSpace(gap) == "" && !afterLineComment) {
 			gap = ""
 		}
+		afterLineComment = token.Token == pg.Token_SQL_COMMENT
 		out.WriteString(gap)
 		text := src.orig[token.Start:token.End]
 		// placeholders were swapped for $n tokens, so their original :name text is kept as is
@@ -118,13 +122,17 @@ func canonicalCode(code string) string {
 	if err != nil {
 		return code
 	}
-	parts := make([]string, len(scan.Tokens))
-	for index, token := range scan.Tokens {
+	// comments never change meaning, so a body with comments removed compares equal
+	var parts []string
+	for _, token := range scan.Tokens {
+		if isComment(token) {
+			continue
+		}
 		text := code[token.Start:token.End]
 		if foldable(token, text) {
 			text = asciiLower(text)
 		}
-		parts[index] = text
+		parts = append(parts, text)
 	}
 	return strings.Join(parts, " ")
 }
@@ -183,4 +191,48 @@ func reindentBody(body string) string {
 		}
 	}
 	return tag + strings.Join(lines, "\n") + tag
+}
+
+// stripComments blanks out every comment in src, keeping its line breaks, so
+// offsets and line numbers are unchanged and the parser never sees a comment
+// learn: a []byte copy of the string can be edited in place; converting back makes a new string.
+func stripComments(src string) string {
+	scan, err := pg.Scan(src)
+	if err != nil {
+		return src
+	}
+	out := []byte(src)
+	for _, token := range scan.Tokens {
+		if !isComment(token) {
+			continue
+		}
+		for index := token.Start; index < token.End; index++ {
+			if out[index] != '\n' {
+				out[index] = ' '
+			}
+		}
+	}
+	return string(out)
+}
+
+// stripCommentLines removes comments from function body code: a line that
+// held only a comment is dropped, and spaces left behind a removed comment are trimmed
+func stripCommentLines(code string) string {
+	blanked := stripComments(code)
+	if blanked == code {
+		return code
+	}
+	original := strings.Split(code, "\n")
+	lines := strings.Split(blanked, "\n")
+	var kept []string
+	for index, line := range lines {
+		if line == original[index] {
+			kept = append(kept, line)
+			continue
+		}
+		if trimmed := strings.TrimRight(line, " \t"); strings.TrimSpace(trimmed) != "" {
+			kept = append(kept, trimmed)
+		}
+	}
+	return strings.Join(kept, "\n")
 }

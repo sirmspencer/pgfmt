@@ -89,7 +89,8 @@ func countComments(t *testing.T, src string) int {
 	return count
 }
 
-func TestCommentsAreKept(t *testing.T) {
+// no comment survives formatting
+func TestNoCommentsInOutput(t *testing.T) {
 	inputs := []string{
 		"-- only a comment\n",
 		"select 1; -- one\n-- two\nselect 2 /* three */;\n-- four\n",
@@ -101,8 +102,8 @@ func TestCommentsAreKept(t *testing.T) {
 	}
 	for _, input := range inputs {
 		output := formatOrFail(t, input).Output
-		if got, want := countComments(t, output), countComments(t, input); got != want {
-			t.Errorf("comment count %d, want %d\ninput:\n%s\noutput:\n%s", got, want, input, output)
+		if got := countComments(t, output); got != 0 {
+			t.Errorf("output has %d comments\ninput:\n%s\noutput:\n%s", got, input, output)
 		}
 	}
 }
@@ -116,7 +117,7 @@ func TestPlaceholders(t *testing.T) {
 		{"kebab case with a number", "select :address-2", "select :address-2\n"},
 		{"minus needs spaces", "select :limit - 1", "select :limit - 1\n"},
 		{"inside a string", "select ':not_a_param'", "select ':not_a_param'\n"},
-		{"inside a comment", "-- uses :id\nselect :id", "-- uses :id\nselect :id\n"},
+		{"inside a comment", "-- uses :id\nselect :id", "select :id\n"},
 		{"array slice", "select tags[1:2] from t", "select tags[1:2]\nfrom t\n"},
 		{"repeated name", "select :a, :a", "select :a, :a\n"},
 		{"mixed with numbered params", "select $1, :name", "select $1, :name\n"},
@@ -133,9 +134,9 @@ func TestStatementsWithoutSemicolons(t *testing.T) {
 	assertOutput(t, formatOrFail(t, "SELECT id FROM users").Output, "select id\nfrom users\n")
 }
 
-func TestBlankLinesAroundComments(t *testing.T) {
-	input := "-- file header\n\n-- query comment\nselect 1;\n\n\n-- footer\n"
-	want := "-- file header\n\n-- query comment\nselect 1;\n\n-- footer\n"
+func TestCommentLinesLeaveNoBlankLines(t *testing.T) {
+	input := "-- file header\n\n-- query comment\nselect 1;\n\n\n-- footer\nselect 2;\n-- end\n"
+	want := "select 1;\n\nselect 2;\n"
 	assertOutput(t, formatOrFail(t, input).Output, want)
 }
 
@@ -149,9 +150,9 @@ func TestUnsupportedStatementIsKept(t *testing.T) {
 }
 
 func TestUnsupportedExpressionIsKept(t *testing.T) {
-	input := "select x from t where name similar to 'a%' -- keep\n;"
+	input := "select x from t where name similar to 'a%' -- removed\n;"
 	result := formatOrFail(t, input)
-	assertOutput(t, result.Output, input+"\n")
+	assertOutput(t, result.Output, "select x from t where name similar to 'a%';\n")
 	if len(result.Skipped) != 1 {
 		t.Errorf("skipped = %+v, want one", result.Skipped)
 	}
@@ -359,8 +360,7 @@ func TestSelectList(t *testing.T) {
 		{"three items stay inline", "select id, name, email from users", "select id, name, email\nfrom users\n"},
 		{"four items break", "select id, name, email, phone from users", "select\n  id,\n  name,\n  email,\n  phone\nfrom users\n"},
 		{"a multi-line item breaks", "select id, case when a then 1 end as b from t", "select\n  id,\n  case\n    when a then 1\n  end as b\nfrom t\n"},
-		{"a comment between items breaks", "select id, -- key\n name from t", "select\n  id, -- key\n  name\nfrom t\n"},
-		{"a comment after the last item stays inline", "select id, name -- names\nfrom t", "select id, name -- names\nfrom t\n"},
+		{"comments between items are removed", "select id, -- key\n name from t", "select id, name\nfrom t\n"},
 		{"distinct", "select distinct a, b from t", "select distinct a, b\nfrom t\n"},
 	}
 	for _, test := range tests {
@@ -377,6 +377,23 @@ func TestOtherListsFollowTheListsRule(t *testing.T) {
 		{"join using", "select 1 from a inner join b using (w, x, y, z)", "select 1\nfrom a\ninner join b\n  using (\n    w,\n    x,\n    y,\n    z\n  )\n"},
 		{"conflict target", "insert into t (a) values (1) on conflict (a, b, c, d) do nothing", "insert into t (a)\nvalues (1)\non conflict (\n  a,\n  b,\n  c,\n  d\n) do nothing\n"},
 		{"drop", "drop table a, b, c, d", "drop table\n  a,\n  b,\n  c,\n  d\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertOutput(t, formatOrFail(t, test.input).Output, test.want)
+		})
+	}
+}
+
+func TestCommentsAreRemoved(t *testing.T) {
+	tests := []struct{ name, input, want string }{
+		{"line and block comments", "-- header\nselect id, -- key\n  email /* contact */ from users; -- trailing\n-- footer\n",
+			"select id, email\nfrom users;\n"},
+		{"placeholders are kept", "select * from t\nwhere a = :a\n:filters -- note\n", "select *\nfrom t\nwhere a = :a\n:filters\n"},
+		{"strings that look like comments are kept", "select '-- not a comment', '/* nor */'", "select '-- not a comment', '/* nor */'\n"},
+		{"function bodies", "create function f() returns int language plpgsql as $$\nbegin\n  -- gone\n  return 1; /* gone */\nend;\n$$",
+			"create function f()\n  returns integer\n  language plpgsql\nas $$\n  begin\n    return 1;\n  end;\n$$\n"},
+		{"unsupported statements", "VACUUM users -- why\n;", "vacuum users;\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

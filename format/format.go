@@ -93,6 +93,8 @@ func FormatResult(src string) (*Result, error) {
 // formatSQL is FormatResult, except that newlines inside literals are still
 // marked, so a caller nesting the output (a function body) can indent it safely
 func formatSQL(src string) (*Result, error) {
+	// comments are removed; blanking them keeps every offset and line number
+	src = stripComments(src)
 	var fixes []Fixed
 	// modes remembers how each placeholder must be read, learned from failed parses
 	modes := map[string]placeholderMode{}
@@ -342,7 +344,12 @@ func (p *printer) tryStatement(span *statementSpan) (body string, reason string)
 	var inner []*pg.ScanToken
 	for _, comment := range span.inner {
 		if comment.Start > span.end && strings.HasPrefix(p.src.orig[comment.Start:comment.End], ":") {
-			lines[len(lines)-1] += " " + commentText(p.src, comment)
+			if p.src.ownLine(comment.Start) {
+				lines = append(lines, commentText(p.src, comment))
+				tags = append(tags, -1)
+			} else {
+				lines[len(lines)-1] += " " + commentText(p.src, comment)
+			}
 			continue
 		}
 		inner = append(inner, comment)

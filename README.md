@@ -8,7 +8,7 @@ pgfmt formats PostgreSQL `.sql` files with a single fixed style, so that every e
 
 - **Meaning is preserved.** After formatting a statement, pgfmt parses the result and compares its syntax tree with the original. If the trees differ, the statement is left exactly as written and a warning is printed.
 - **Unsupported syntax is left alone.** Statements that use syntax the printer does not handle yet are copied through unchanged and reported on stderr.
-- **Comments are kept.** Comments stay next to the item they were written beside.
+- **Comments are removed.** Every `--` and `/* */` comment is removed, including those inside `sql` and `plpgsql` function bodies. Text inside strings is never treated as a comment.
 - **Placeholders are kept.** `:name` placeholders, including kebab-case names such as `:user-id`, are preserved. A colon inside array brackets (`tags[1:2]`), a cast (`::`), a string, or a comment is never treated as a placeholder.
 - **Literals are untouched.** String and number literals, including dollar-quoted function bodies, are printed exactly as written.
 
@@ -159,6 +159,6 @@ go test ./...
 
 Editor plugins run whichever `pgfmt` is on the path, so `./bin/link` is how a local change is tested in an editor.
 
-Each directory in `testdata/cases` contains an `input.sql` and the `expected.sql` it must format to. The tests also check that formatting `expected.sql` leaves it unchanged and that no comments are lost.
+Each directory in `testdata/cases` contains an `input.sql` and the `expected.sql` it must format to. The tests also check that formatting `expected.sql` leaves it unchanged and that no comments remain.
 
 `rules.md` is generated. Edit `docs/rules.template.md`, which contains each rule and its input examples, then run `go run ./tools/rules` to write `rules.md` with the formatter's output below every example. `go test ./...` fails if `rules.md` is out of date.

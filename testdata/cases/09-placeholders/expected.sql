@@ -1,4 +1,3 @@
--- find users by :id within a tenant
 select id, :tenant_id as tenant
 from users
 where

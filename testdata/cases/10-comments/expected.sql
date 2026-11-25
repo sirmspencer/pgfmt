@@ -1,7 +1,3 @@
--- leading comment for the query
-select
-  id, -- primary key
-  email /* contact */
+select id, email
 from users
--- only active users
-where active = true; -- trailing
+where active = true;

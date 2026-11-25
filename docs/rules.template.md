@@ -8,7 +8,7 @@ This document lists the formatting rules pgfmt applies. Each rule shows input an
 
 Each rule below was compared with the default SQL code style of the JetBrains SQL formatter, which IntelliJ IDEA Ultimate and DataGrip share. The comparison used DataGrip 2025.1 with an empty code style, run through its command-line formatter on the examples in this document.
 
-4 same · 26 different · 12 not handled by IntelliJ
+3 same · 27 different · 12 not handled by IntelliJ
 
 | Rule | IntelliJ default |
 |---|---|
@@ -49,7 +49,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 | [parentheses](#parentheses) | Not handled |
 | [quoting](#quoting) | Not handled |
 | [stray-commas](#stray-commas) | Not handled |
-| [comments](#comments) | Same |
+| [comments](#comments) | Different |
 | [placeholders](#placeholders) | Different |
 | [literals](#literals) | Same |
 | [semicolons](#semicolons) | Same |
@@ -101,6 +101,7 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 - [type-names](#type-names)
 - [parentheses](#parentheses)
 - [quoting](#quoting)
+- [comments](#comments)
 
 **Repairs**
 
@@ -108,7 +109,6 @@ Each rule below was compared with the default SQL code style of the JetBrains SQ
 
 **Preservation**
 
-- [comments](#comments)
 - [placeholders](#placeholders)
 - [literals](#literals)
 - [semicolons](#semicolons)
@@ -178,7 +178,7 @@ select NULL, TRUE, FALSE;
 
 ### commas
 
-**When a list is split across lines, each item except the last ends with a comma.** This applies to every multi-line list: select items, `group by`, `order by`, `set`, `returning`, CTEs, long parenthesized lists, table columns, and `alter table` actions. Lists that stay on one line use ordinary `, ` separators. A comment at the end of an item's line follows its comma. Test cases: `01-select-basic`, `10-comments`.
+**When a list is split across lines, each item except the last ends with a comma.** This applies to every multi-line list: select items, `group by`, `order by`, `set`, `returning`, CTEs, long parenthesized lists, table columns, and `alter table` actions. Lists that stay on one line use ordinary `, ` separators. Test case: `01-select-basic`.
 
 **IntelliJ default:** Same: commas trail the item when a list is split across lines.
 
@@ -190,7 +190,7 @@ select id, email, created_at, updated_at from users;
 
 ### column-lists
 
-**`select`, `group by`, `order by`, and `returning` keep three or fewer items on the keyword's line. With four or more items, the keyword is alone on its line and each item is on its own indented line.** This is the same count as the [lists](#lists) rule. A shorter list is also split one item per line when an item spans several lines, such as a `case` expression or a subquery, or when a comment sits between items, so that the comment stays next to its item. Test cases: `01-select-basic`, `07-case-expressions`, `08-group-order-limit`, `10-comments`.
+**`select`, `group by`, `order by`, and `returning` keep three or fewer items on the keyword's line. With four or more items, the keyword is alone on its line and each item is on its own indented line.** This is the same count as the [lists](#lists) rule. A shorter list is also split one item per line when an item spans several lines, such as a `case` expression or a subquery. Test cases: `01-select-basic`, `07-case-expressions`, `08-group-order-limit`.
 
 **IntelliJ default:** Different: lists of three or fewer single-line items behave the same. Longer lists stay on the keyword's line until they pass the right margin, and continuation lines are aligned under the first item.
 
@@ -220,13 +220,6 @@ A multi-line item:
 
 ```sql
 select id, case when status = 'a' then 'active' else 'other' end as label from users;
-```
-
-A comment between items:
-
-```sql
-select id, -- primary key
-  name from users;
 ```
 
 `distinct` and `distinct on (...)` stay with `select`:
@@ -269,7 +262,7 @@ insert into tags (name) values ('a'), ('b');
 
 ### conditions
 
-**`where` and `having` follow the clause-items rule, with `and` or `or` leading each condition after the first.** A single condition stays on the keyword's line. Two or more conditions place the keyword alone on its line and each condition on its own indented line. Test cases: `04-where-boolean`, `24-conditions`.
+**`where` and `having` keep a single condition on the keyword's line. Two or more conditions place the keyword alone on its line and each condition on its own indented line, with `and` or `or` leading each condition after the first.** Conditions do not use the three-item rule of [column-lists](#column-lists): two conditions already split. Test cases: `04-where-boolean`, `24-conditions`.
 
 **IntelliJ default:** Different: a single condition behaves the same. With several conditions, the first stays on the `where` or `having` line and the rest are aligned beneath it, led by `and` or `or`.
 
@@ -629,7 +622,7 @@ The body is a string to the PostgreSQL parser, so pgfmt formats it separately, b
 - **`plpgsql`:** each standalone SQL statement is formatted with every rule in this document. A statement is standalone when it starts with `select`, `insert`, `update`, `delete`, or `with` after a statement boundary (`;`, `begin`, `then`, `else`, `loop`) or after `return query`, and ends at its semicolon. A standalone statement always starts on its own line; if it followed other code on the line, it moves to the next line one level deeper, and code after its semicolon, such as `end if;`, moves to its own line. The procedural code around the statements keeps its line structure, with keywords and unquoted identifiers lowercased. The body is indented one level inside its dollar quotes: the indentation its lines share is replaced by one level, and their own nesting is kept.
 - **Other languages,** such as `plpython3u`, are left exactly as written.
 
-Two kinds of SQL inside `plpgsql` are not formatted: SQL inside an expression, such as `if exists (select ...)` or `for r in select ... loop`, and statements that use plpgsql-only syntax, such as `select ... into strict`. Both are kept as written apart from case. Strings, quoted identifiers, and comments in any body are never changed.
+Two kinds of SQL inside `plpgsql` are not formatted: SQL inside an expression, such as `if exists (select ...)` or `for r in select ... loop`, and statements that use plpgsql-only syntax, such as `select ... into strict`. Both are kept as written apart from case. Strings and quoted identifiers in any body are never changed, and comments in `sql` and `plpgsql` bodies are removed.
 
 A `plpgsql` trigger function:
 
@@ -854,6 +847,29 @@ select "user".id, 1 as "order" from "user";
 
 ---
 
+### comments
+
+**Comments are removed.** That includes `--` and `/* */` comments anywhere in a statement, between statements, and inside `sql` and `plpgsql` function bodies, where a line that held only a comment is dropped. Comments in bodies of other languages, such as `plpython3u`, are left with the body. Text inside strings that looks like a comment is kept, and so are `:name` placeholders. Line numbers in error messages still refer to the original file. Test case: `10-comments`.
+
+**IntelliJ default:** Different: comments are kept beside the code they were written next to.
+
+```sql
+-- leading comment for the query
+select id, -- primary key
+  email /* contact */
+from users
+-- only active users
+where active = true; -- trailing
+```
+
+Text in a string is not a comment:
+
+```sql
+select '-- not a comment', '/* nor this */' from t;
+```
+
+---
+
 ## Repairs
 
 ### stray-commas
@@ -897,23 +913,6 @@ select , a from t;
 ---
 
 ## Preservation
-
-### comments
-
-**Comments are kept next to the code they were written beside.** A comment on its own line stays on its own line before the same item. A comment at the end of a line stays at the end of that item's line. Test case: `10-comments`.
-
-**IntelliJ default:** Same: comments stay beside the code they were written next to.
-
-```sql
--- leading comment for the query
-select id, -- primary key
-  email /* contact */
-from users
--- only active users
-where active = true; -- trailing
-```
-
----
 
 ### placeholders
 
